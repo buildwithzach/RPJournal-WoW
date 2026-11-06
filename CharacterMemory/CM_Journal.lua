@@ -1,3 +1,4 @@
+if not CMCompat or not CMCompat.supported then return end
 -- CM_Journal.lua — Two-page journal (fixed 1024x512) with textures/icons
 
 -- OPT: Diagnostics off for WoW API stub noise in editors; no runtime impact
@@ -16,6 +17,7 @@ local math_floor = math.floor
 local math_max = math.max
 local string_format = string.format
 local SetPortraitTexture = SetPortraitTexture
+local UnitGUID = CMCompat.UnitGUID
 
 CMJ = CMJ or {}
 CMUI = CMUI or {}
@@ -37,8 +39,10 @@ local DEBUG_TINT = false
 -- Mock model
 local Model = {
   entries = {}, order = {}, sort = "priority",
-  selected = nil, scrollOffset = 0,
+  selected = nil, scrollOffset = 0, search = "", filter = "all",
 }
+
+CMJ.Model = Model
 
 local function SeedMock()
   if next(Model.entries) then return end
@@ -99,7 +103,7 @@ end
 -- Optimize SortFunc by caching frequently accessed data
 local function computePriorityScore(e)
   if type(e) ~= "table" then return 0 end
-  local score = 0
+  local score = e.favorite and 200000 or 0
   -- Strong signals
   if e.isFriend then score = score + 100000 end
   if e.guildName and e.guildName ~= "" then score = score + 50000 end
@@ -210,8 +214,8 @@ local function SetFallbackSilhouette(texture, entry)
 
   local function fileExists(path)
     if not path or path == "" then return false end
-    local ok = pcall(GetFileIDFromPath, path)
-    return ok and true or false
+    local ok, fileID = pcall(GetFileIDFromPath, path)
+    return ok and fileID and fileID ~= 0 and true or false
   end
 
   -- Try race-specific temporary portrait variants if they exist (guarded)
@@ -266,6 +270,7 @@ local function SaveUIState()
   local J = CharacterMemoryDB.settings.ui.journal
   J.lastSelected = Model.selected
   J.scroll = Model.scrollOffset or 0
+  J.page = Model.page or 1
 end
 
 -- Skins are defined in XML; no Lua-driven row skinning
@@ -275,7 +280,8 @@ local function ApplyFilter()
   -- Rebuild visible order
   wipe(Model.order)
   for id, e in pairs(Model.entries) do
-    if type(id) == "string" and id:match("^Player%-") then
+    if type(e) == "table" and type(id) == "string" and id:match("^Player%-")
+      and id ~= CMCompat.UnitGUID("player") and type(e.name) == "string" and e.name ~= "" then
       -- Optional: user setting to hide strangers
       local hideStrangers = false
       if _G.CharacterMemoryDB and _G.CharacterMemoryDB.settings then
@@ -289,10 +295,20 @@ local function ApplyFilter()
         local isStranger = (tier == "Stranger") or (level <= 0 and xp <= 0)
         include = not isStranger
       end
+      local haystack = table.concat({e.name or "", e.profile and e.profile.alias or "", e.profile and e.profile.title or ""}, " "):lower()
+      if Model.search ~= "" and not haystack:find(Model.search:lower(), 1, true) then include = false end
+      if Model.filter == "favorites" and not e.favorite then include = false end
+      if Model.filter == "recent" and time() - (e._lastSeenStamp or 0) > 7 * 86400 then include = false end
+      if Model.filter == "stories" then
+        local open = false
+        for _, story in ipairs(e.stories or {}) do if story.state == "open" then open = true; break end end
+        if not open then include = false end
+      end
       if include then table.insert(Model.order, id) end
     end
   end
   table.sort(Model.order, SortFunc)
+  Model.page = math.max(1, math.min(Model.page or 1, math.max(1, math.ceil(#Model.order / PAGE_SIZE))))
   -- Keep selection stable; if previous selection no longer exists, select first
   local keep = false
   for _, id in ipairs(Model.order) do if id == Model.selected then keep = true break end end
@@ -315,7 +331,7 @@ local function maybeRequestBioFor(id, e)
   local now = GetTime and GetTime() or 0
   if (lastBioRequestAt[id] or 0) + BIO_REQUEST_COOLDOWN > now then return end
   lastBioRequestAt[id] = now
-  if _G.CharacterMemory_RequestBioFrom then pcall(_G.CharacterMemory_RequestBioFrom, name) end
+  if _G.CharacterMemory_RequestBioFrom then pcall(_G.CharacterMemory_RequestBioFrom, name, id) end
 end
 
 -- File-scope row factory so both initial build and rebuild share identical visuals/behavior
@@ -403,10 +419,26 @@ local function BuildFromXML()
     if btn == "LeftButton" and IsAltKeyDown() and (not InCombatLockdown or not InCombatLockdown()) then self:StartMoving() end
   end)
   root:HookScript("OnMouseUp", function(self, btn)
-    if btn == "LeftButton" then self:StopMovingOrSizing() end
+    if btn == "LeftButton" then
+      self:StopMovingOrSizing()
+      local point, _, _, x, y = self:GetPoint()
+      local saved = CharacterMemoryDB.settings.ui.journal
+      saved.point, saved.x, saved.y = point or "CENTER", x or 0, y or 0
+    end
   end)
   root:HookScript("OnKeyDown", function(self, key)
-    if key == "ESCAPE" then self:Hide(); return end
+    if key == "ESCAPE" then
+      local editor = CMChronicleUI and CMChronicleUI.editor
+      local reader = CMJourney and CMJourney.reader
+      if editor and editor:IsShown() then editor:Hide()
+      elseif reader and reader:IsShown() then reader:Hide()
+      else self:Hide() end
+      self:SetPropagateKeyboardInput(false)
+      return
+    end
+    local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+    if focus and focus.IsObjectType and focus:IsObjectType("EditBox") then self:SetPropagateKeyboardInput(true); return end
+    self:SetPropagateKeyboardInput(false)
     local idx = FindSelectedIndex() or 1
     if key == "UP" then idx = idx - 1
     elseif key == "DOWN" then idx = idx + 1
@@ -414,9 +446,9 @@ local function BuildFromXML()
     elseif key == "PAGEDOWN" then idx = idx + #(CMJ.refs.rows or {})
     elseif key == "HOME" then idx = 1
     elseif key == "END" then idx = #Model.order
-    else return end
+    else self:SetPropagateKeyboardInput(true); return end
     if idx < 1 then idx = 1 elseif idx > #Model.order then idx = #Model.order end
-    if Model.order[idx] then Model.selected = Model.order[idx]; CMJ.RefreshList(); CMJ.PopulateDetail(Model.selected); SaveUIState() end
+    if Model.order[idx] then Model.selected = Model.order[idx]; Model.page = math.floor((idx - 1) / PAGE_SIZE) + 1; CMJ.RefreshList(); CMJ.PopulateDetail(Model.selected); SaveUIState() end
   end)
 
   local base = root:GetFrameLevel() or 1
@@ -486,9 +518,7 @@ local function BuildFromXML()
   function CMUI.TabSwap(which)
     if which == "Profile" then
       -- Profile tab now opens the RP Bio character sheet
-      if CharacterMemory_OpenCharacterSheet then
-        CharacterMemory_OpenCharacterSheet()
-      end
+      if CMChronicleUI then CMChronicleUI.ShowProfile(Model.selected) end
     else
       tabSwap(which)
     end
@@ -506,8 +536,10 @@ local function BuildFromXML()
   function CMUI.Select(id)
     if not id then return end
     Model.selected = id
+    for index, guid in ipairs(Model.order) do if guid == id then Model.page = math.floor((index - 1) / PAGE_SIZE) + 1; break end end
     CMJ.RefreshList()
     CMJ.PopulateDetail(id)
+    SaveUIState()
   end
 
   -- Expose delete entry function for XML OnClick bindings
@@ -583,7 +615,16 @@ local function BuildFromXML()
   local noteScroll = _G.CMJ_RootXMLPageRNotesScroll
   local noteEdit = _G.CMJ_RootXMLPageRNotesEdit
   local shareBtn = _G.CMJ_RootXMLPageRNotesShare
-  if noteScroll and noteEdit then pcall(noteScroll.SetScrollChild, noteScroll, noteEdit) end
+  if noteScroll and noteEdit then
+    pcall(noteScroll.SetScrollChild, noteScroll, noteEdit)
+    noteEdit:SetMaxLetters(12000)
+    noteEdit:SetScript("OnTextChanged", function(self, userInput)
+      if self._cmLoading or not userInput or not self._cmGuid then return end
+      local e = CharacterMemoryDB.entries[self._cmGuid]
+      if e then e.notes = self:GetText() or "" end
+    end)
+    noteEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+  end
   if shareBtn then shareBtn:SetScript("OnClick", function()
     if Model.selected and CharacterMemory_Share then CharacterMemory_Share(Model.selected) end
   end) end
@@ -687,6 +728,42 @@ local function BuildFromXML()
     faux=faux,
   }
 
+  if CMChronicleUI then CMChronicleUI.Build(root) end
+  local toolbar = _G.CMJ_RootXMLPageLToolbar
+  if toolbar then
+    local search = CreateFrame("EditBox", "CMJ_SearchBox", toolbar, "InputBoxTemplate")
+    search:SetSize(175, 20); search:SetPoint("LEFT", toolbar, "LEFT", 4, 0)
+    search:SetAutoFocus(false); search:SetMaxLetters(64)
+    search:SetScript("OnTextChanged", function(self)
+      Model.search = self:GetText() or ""; Model.page = 1
+      ApplyFilter(); CMJ.RefreshList(); if Model.selected then CMJ.PopulateDetail(Model.selected) end
+    end)
+    search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    local hint = search:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("LEFT", search, "LEFT", 4, 0); hint:SetText("Search people…")
+    search:HookScript("OnTextChanged", function(self) hint:SetShown((self:GetText() or "") == "") end)
+    CMJ.refs.search = search
+  end
+  local menu = _G.CMJ_RootXMLPageLFilterMenu
+  if menu and UIDropDownMenu_Initialize then
+    UIDropDownMenu_SetWidth(menu, 125)
+    UIDropDownMenu_SetText(menu, "All people")
+    UIDropDownMenu_Initialize(menu, function()
+      for _, option in ipairs({{"all", "All people"}, {"favorites", "Favorites"}, {"recent", "Seen this week"}, {"stories", "Unfinished stories"}}) do
+        local value, label = option[1], option[2]
+        local item = UIDropDownMenu_CreateInfo()
+        item.text, item.checked = label, Model.filter == value
+        item.func = function()
+          Model.filter, Model.page = value, 1; UIDropDownMenu_SetText(menu, label)
+          ApplyFilter(); CMJ.RefreshList(); CMJ.PopulateDetail(Model.selected)
+        end
+        UIDropDownMenu_AddButton(item)
+      end
+    end)
+  end
+  root:HookScript("OnHide", SaveUIState)
+
   -- OnShow: restore position and (re)build list; bind XML rows
   root:HookScript("OnShow", function(self)
     if CharacterMemoryDB and CharacterMemoryDB.settings and CharacterMemoryDB.settings.ui and CharacterMemoryDB.settings.ui.journal then
@@ -698,7 +775,9 @@ local function BuildFromXML()
       _G.CMJ_RootXMLPageLRow1, _G.CMJ_RootXMLPageLRow2, _G.CMJ_RootXMLPageLRow3, _G.CMJ_RootXMLPageLRow4, _G.CMJ_RootXMLPageLRow5,
       _G.CMJ_RootXMLPageLRow6, _G.CMJ_RootXMLPageLRow7, _G.CMJ_RootXMLPageLRow8, _G.CMJ_RootXMLPageLRow9, _G.CMJ_RootXMLPageLRow10,
     }
-    SyncFromDB(); ApplyFilter(); CMJ.RebuildList(); if Model.selected then CMJ.PopulateDetail(Model.selected) end
+    local saved = CharacterMemoryDB.settings.ui.journal
+    if not Model.selected then Model.selected = saved.lastSelected; Model.page = saved.page or 1 end
+    SyncFromDB(); ApplyFilter(); CMJ.RebuildList(); CMJ.PopulateDetail(Model.selected)
     -- Wire pagination controls
     if CMJ.refs.prevBtn and not CMJ.refs.prevBtn._wired then
       CMJ.refs.prevBtn._wired = true
@@ -749,13 +828,14 @@ function CMJ.RefreshList()
   local faux = R.faux
   local total=#Model.order
   local visible = math.min(PAGE_SIZE, #(R.rows))
-  local page = Model.page or 1
+  local page = math.max(1, math.min(Model.page or 1, math.max(1, math.ceil(total / PAGE_SIZE))))
+  Model.page = page
   local offset = (page - 1) * PAGE_SIZE
   for i=1,visible do local idx=offset+i; local row=R.rows[i]
     if idx<=total then local id=Model.order[idx]; local e=Model.entries[id] or {}
       row.id=id
       local tierText = string_format("Lv %d • %s", e.level or 0, e.tier or "Stranger")
-      row.name:SetText(ColorizeNameByClass(e.name or "Unknown", e.classFile))
+      row.name:SetText((e.favorite and "* " or "") .. ColorizeNameByClass(CMCompat.Display(e.name or "Unknown"), e.classFile))
       row.sub:SetText(tierText)
       -- Update small achievements bar next to name
       do
@@ -785,6 +865,7 @@ function CMJ.RefreshList()
   if R.nextBtn then
     local maxPages = math.max(1, math.ceil(total / PAGE_SIZE))
     R.nextBtn:SetEnabled(maxPages > 1)
+    if R.prevBtn then R.prevBtn:SetEnabled(maxPages > 1) end
   end
   if R.pageInd and R.pageInd.text and R.pageInd.text.SetText then
     local maxPages = math.max(1, math.ceil(total / PAGE_SIZE))
@@ -819,10 +900,11 @@ end
 
 function CMJ.PopulateDetail(id)
   local R=CMJ.refs; if not R then return end
+  if not R.title or not R.tier then return end
   local e=Model.entries[id] or {}
   -- Ensure we have a public bio; if not, try to request it once here
   if e and (not e.profile or not e.profile.publicBio or e.profile.publicBio == "") then maybeRequestBioFor(id, e) end
-  R.title:SetText(ColorizeNameByClass(e.name or "Unknown", e.classFile)); R.tier:SetText(e.tier or "Stranger")
+  R.title:SetText(ColorizeNameByClass(CMCompat.Display(e.name or "Your journal"), e.classFile)); R.tier:SetText(e.tier or "Choose someone on the left")
   -- Optional subtitle if available
   if R.titleSub then R.titleSub:SetText(string_format("Lv %d • %s • %d XP", e.level or 0, e.tier or "Stranger", e.xp or 0)) end
   local lvl, tierName, pct
@@ -907,7 +989,16 @@ function CMJ.PopulateDetail(id)
       for i,it in ipairs(R.statsRow.items) do if it and it.fs and it.fs.SetText then it.fs:SetText(vals[i] or 0) end end
     end
   end
-  if R.noteEdit then R.noteEdit:SetText(e.notes or "") end
+  if R.noteEdit then
+    local editing = R.noteEdit.HasFocus and R.noteEdit:HasFocus() and R.noteEdit._cmGuid == id
+    if not editing then
+      R.noteEdit._cmLoading = true
+      R.noteEdit:SetText(e.notes or "")
+      R.noteEdit._cmGuid = id
+      R.noteEdit._cmLoading = nil
+    end
+  end
+  if CMChronicleUI then CMChronicleUI.Refresh(id) end
 
   -- Removed large Achievements summary bar
 
@@ -1071,13 +1162,13 @@ function CMJ.Toggle()
     f:Show()
     -- Force a paint now as well (defensive)
     if CMJ.RefreshList then CMJ.RefreshList() end
-    if Model.order[1] then Model.selected=Model.order[1]; if CMJ.PopulateDetail then CMJ.PopulateDetail(Model.selected) end end
+    if CMJ.PopulateDetail then CMJ.PopulateDetail(Model.selected) end
   end
 end
 
 -- Bootstrap
 local evt=CreateFrame("Frame")
-evt:RegisterEvent("ADDON_LOADED")
+CMCompat.RegisterEvent(evt, "ADDON_LOADED")
 evt:SetScript("OnEvent", function(_,e,name)
   if e=="ADDON_LOADED" and name==ADDON_NAME then
     BuildFromXML()

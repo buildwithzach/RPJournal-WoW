@@ -1,3 +1,4 @@
+if not CMCompat or not CMCompat.supported then return end
 -- CM_Achievements.lua — Achievement catalog and APIs
 
 -- Local achievement catalog; referenced by exported APIs below

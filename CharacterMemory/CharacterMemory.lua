@@ -1,10 +1,11 @@
+if not CMCompat or not CMCompat.supported then return end
 --[[
 Character Memory — RP Relationship Journal with Leveling System
 
-Retail WoW addon. No external libraries.
+WoW Forever RP journal. No external libraries.
 
 Features
-- Per-target memory journal (players and NPCs) storing first/last seen context and notes
+- Per-target memory journal (players) storing first/last seen context and notes
 - Relationship leveling system with XP sources, cooldowns, and tiers
 - Movable UI panel showing key info and a relationship bar
 - Slash commands for notes, sharing, toggles, relation info, and manual XP adjust
@@ -34,8 +35,8 @@ local CreateFrame = CreateFrame
 local UIParent = UIParent
 local UnitExists = UnitExists
 local UnitIsPlayer = UnitIsPlayer
-local UnitGUID = UnitGUID
-local UnitName = UnitName
+local UnitGUID = CMCompat.UnitGUID
+local UnitName = CMCompat.UnitName
 local UnitClass = UnitClass
 local UnitRace = UnitRace
 local UnitLevel = UnitLevel
@@ -43,6 +44,7 @@ local UnitFactionGroup = UnitFactionGroup
 local UnitSex = UnitSex
 local UnitIsFriend = UnitIsFriend
 local C_FriendList = C_FriendList
+local GetGuildInfo = CMCompat.GuildInfo
 local IsInGroup = IsInGroup
 local IsInRaid = IsInRaid
 local IsInInstance = IsInInstance
@@ -88,9 +90,10 @@ local handleChallengeModeCompleted
 local handleScenarioCompleted
 local handlePvpMatchComplete
 local resetDungeonRun
+local refreshRelationship
 
 local function initializeDatabase()
-  CharacterMemoryDB.version = CharacterMemoryDB.version or 1
+  CharacterMemoryDB.version = tonumber(CharacterMemoryDB.version) or 1
   CharacterMemoryDB.settings = CharacterMemoryDB.settings or {
     showOnTarget = true,
     shareEnabled = false,
@@ -107,26 +110,25 @@ local function initializeDatabase()
   if CharacterMemoryDB.settings.useSheetOnTarget == nil then CharacterMemoryDB.settings.useSheetOnTarget = true end
   CharacterMemoryDB.settings.minimap = CharacterMemoryDB.settings.minimap or { enabled = true, angle = 210 }
   CharacterMemoryDB.entries = CharacterMemoryDB.entries or {}
+  if CharacterMemoryDB.settings.bioSharing == nil then CharacterMemoryDB.settings.bioSharing = false end
+  CMChronicle.Initialize(CharacterMemoryDB)
+  CMProfile.Ensure()
 end
 
 local function fixupEntries()
-  -- Basic migration gate for future schema updates
-  local ver = CharacterMemoryDB.version or 1
-  if ver < 1 then
-    -- placeholder for historical migrations
-    ver = 1
+  for guid, e in pairs(CharacterMemoryDB.entries) do
+    if type(e) == "table" then
+      e.guid = guid
+      e.profile = type(e.profile) == "table" and e.profile or {}
+      e.stats = type(e.stats) == "table" and e.stats or {}
+      e.notes = type(e.notes) == "string" and e.notes or ""
+      e.metCount = tonumber(e.metCount) or 0
+      e.xp = tonumber(e.xp) or 0
+      if e.xp ~= e.xp or e.xp == math.huge or e.xp < 0 then e.xp = 0 end
+      refreshRelationship(e)
+    end
   end
-  CharacterMemoryDB.version = ver
-  local entries = CharacterMemoryDB.entries or {}
-  for _, e in pairs(entries) do
-    -- Ensure profile and stats tables exist
-    e.profile = e.profile or { alias = "", alignment = "", personality = "", ideals = "", bonds = "", flaws = "", backstory = "", languages = "", proficiencies = "" }
-    e.stats = e.stats or {}
-    -- Relationship fields are derived from XP — recompute to avoid prior name collisions
-    e.xp = e.xp or 0
-    e.level = computeLevelFromXP(e.xp)
-    e.tier = computeTierFromLevel(e.level)
-  end
+  CharacterMemoryDB.version = math.max(2, CharacterMemoryDB.version or 1)
 end
 
 -- -----------------------------------------------------------------------------
@@ -158,43 +160,7 @@ end
 -- Addon message protocol (public bio sharing)
 -- -----------------------------------------------------------------------------
 
-local ADDON_MSG_PREFIX = "CM1"
-
-local function escapePipes(s)
-  if not s then return "" end
-  return tostring(s):gsub("|", "||")
-end
-
-local function unescapePipes(s)
-  if not s then return "" end
-  return tostring(s):gsub("||", "|")
-end
-
-local function getPlayerGUID()
-  return UnitGUID and UnitGUID("player") or nil
-end
-
-local function sendBioWhisper(toFullName)
-  if not toFullName or toFullName == "" then return end
-  local myGuid = getPlayerGUID()
-  if not myGuid then return end
-  -- Use player's own profile background as their public bio
-  local me = CharacterMemoryDB and CharacterMemoryDB.entries and CharacterMemoryDB.entries[myGuid]
-  local p = me and me.profile or {}
-  local ap = p and p.appearance or {}
-  local bio = p and p.background or ""
-  bio = escapePipes(bio)
-  local function esc(v) return escapePipes(v or "") end
-  local payload = table.concat({
-    bio,
-    esc(p.title), esc(p.pronouns), esc(p.tags), esc(p.alias), esc(p.alignment),
-    esc(p.languages), esc(p.proficiencies),
-    esc(ap.age), esc(ap.height), esc(ap.weight), esc(ap.eyes), esc(ap.hair),
-  }, "|")
-  if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-    C_ChatInfo.SendAddonMessage(ADDON_MSG_PREFIX, "BIO|"..myGuid.."|"..payload, "WHISPER", toFullName)
-  end
-end
+local ADDON_MSG_PREFIX = CMProtocol.PREFIX
 
 -- -----------------------------------------------------------------------------
 -- Interface Options panel wiring
@@ -205,19 +171,10 @@ local function ensureOptionsPanelRegistered()
   if Settings and Settings.RegisterAddOnCategory then
     -- Dragonflight+ Settings UI
     if not _G.CM_OptionsCategory then
-      local category = Settings.RegisterCanvasLayoutCategory(_G.CM_OptionsPanel, "Character Memory")
+      local category = Settings.RegisterCanvasLayoutCategory(_G.CM_OptionsPanel, "RP Journal")
       category.ID = "CharacterMemoryOptions"
       Settings.RegisterAddOnCategory(category)
       _G.CM_OptionsCategory = category
-    end
-    -- Register RP Bio as a subcategory under the main category (left nav child)
-    if _G.CM_OptionsCategory and _G.CM_BioPanel and not _G.CM_BioSubcategory then
-      -- Use the existing CM_BioPanel as the subpage canvas, constrained by Settings container
-      local canvas = _G.CM_BioPanel
-      canvas:ClearAllPoints(); canvas:SetPoint("TOPLEFT"); canvas:SetPoint("BOTTOMRIGHT")
-      local sub = Settings.RegisterCanvasLayoutSubcategory(_G.CM_OptionsCategory, canvas, "RP Bio")
-      sub.ID = "CharacterMemoryBioSub"
-      _G.CM_BioSubcategory = sub
     end
   elseif _G.InterfaceOptions_AddCategory then
     -- Classic/older
@@ -225,248 +182,36 @@ local function ensureOptionsPanelRegistered()
   end
 end
 
--- Ensure our canvases close with Escape and edit boxes don't trap movement keys
 local function wireEscapeAndFocus()
-  -- Allow ESC to hide these frames if they are ever shown standalone
-  if type(UISpecialFrames) == "table" then
-    local names = { "CM_OptionsPanel", "CM_BioPanel", "CMJ_RootXML" }
-    for _, frameName in ipairs(names) do
-      if _G[frameName] then
-        local already = false
-        for i = 1, #UISpecialFrames do
-          if UISpecialFrames[i] == frameName then already = true break end
-        end
-        if not already then table.insert(UISpecialFrames, frameName) end
-      end
+  if UISpecialFrames then
+    for _, name in ipairs({ "CMJ_RootXML", "RPBioFrame" }) do
+      local exists = false; for _, saved in ipairs(UISpecialFrames) do if saved == name then exists = true; break end end
+      if not exists then table.insert(UISpecialFrames, name) end
     end
   end
-
-  -- Helper to apply common edit box behaviors
-  local function configureEditBox(edit)
-    if not edit or not edit.IsObjectType or not edit:IsObjectType("EditBox") then return end
-    if edit.SetAutoFocus then edit:SetAutoFocus(false) end
-    if edit.SetAltArrowKeyMode then edit:SetAltArrowKeyMode(false) end
-    if edit.SetPropagateKeyboardInput then edit:SetPropagateKeyboardInput(true) end
-    if edit.HookScript then
-      edit:HookScript("OnEscapePressed", function(self) self:ClearFocus() end)
-      edit:HookScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    end
-  end
-
-  -- Apply to RP Bio page fields (guard existence; XML may not be loaded yet)
-  local editNames = {
-    "CM_BioPanelTitleEdit",
-    "CM_BioPanelPronounsEdit",
-    "CM_BioPanelAlignmentEdit",
-    "CM_BioPanelTagsEdit",
-    "CM_BioPanelAgeEdit",
-    "CM_BioPanelHeightEdit",
-    "CM_BioPanelWeightEdit",
-    "CM_BioPanelEyesEdit",
-    "CM_BioPanelHairEdit",
-    "CM_BioPanelAliasEdit",
-    "CM_BioPanelLanguagesEdit",
-    "CM_BioPanelProficienciesEdit",
-    "CM_BioPanelBioEdit",
-    -- Hidden legacy placeholder on options panel
-    "CM_OptionsPanelBioEdit",
-  }
-  for _, name in ipairs(editNames) do configureEditBox(_G[name]) end
-
-  -- Clear focus whenever panels are hidden
-  local function clearAll()
-    for _, name in ipairs(editNames) do
-      local e = _G[name]
-      if e and e.ClearFocus then pcall(function() e:ClearFocus() end) end
-    end
-  end
-  if _G.CM_BioPanel and _G.CM_BioPanel.HookScript then
-    _G.CM_BioPanel:HookScript("OnHide", clearAll)
-  end
-  if _G.CM_OptionsPanel and _G.CM_OptionsPanel.HookScript then
-    _G.CM_OptionsPanel:HookScript("OnHide", clearAll)
-  end
 end
 
-function CharacterMemory_OptionsOnShow()
-  CharacterMemoryDB = CharacterMemoryDB or { settings = {} }
-  CharacterMemoryDB.settings = CharacterMemoryDB.settings or {}
-  CharacterMemoryDB.entries = CharacterMemoryDB.entries or {}
-  -- Public Bio of player
-  local guid = UnitGUID and UnitGUID("player")
-  local e = guid and CharacterMemoryDB.entries[guid]
-  local bio = (e and e.profile and (e.profile.publicBio or e.profile.background)) or ""
-  if _G.CM_OptionsPanelBioEdit and _G.CM_OptionsPanelBioEdit.SetText then _G.CM_OptionsPanelBioEdit:SetText(bio) end
-  if _G.CM_BioPanelBioEdit and _G.CM_BioPanelBioEdit.SetText then _G.CM_BioPanelBioEdit:SetText(bio) end
-  -- Populate on the new Bio page when available
-  if _G.CM_BioPanelTitleEdit then _G.CM_BioPanelTitleEdit:SetText((e and e.profile and e.profile.title) or "") end
-  if _G.CM_BioPanelPronounsEdit then _G.CM_BioPanelPronounsEdit:SetText((e and e.profile and e.profile.pronouns) or "") end
-  if _G.CM_BioPanelAlignmentEdit then _G.CM_BioPanelAlignmentEdit:SetText((e and e.profile and e.profile.alignment) or "") end
-  if _G.CM_BioPanelTagsEdit then _G.CM_BioPanelTagsEdit:SetText((e and e.profile and e.profile.tags) or "") end
-  if _G.CM_BioPanelAgeEdit then _G.CM_BioPanelAgeEdit:SetText((e and e.profile and e.profile.appearance and e.profile.appearance.age) or "") end
-  if _G.CM_BioPanelHeightEdit then _G.CM_BioPanelHeightEdit:SetText((e and e.profile and e.profile.appearance and e.profile.appearance.height) or "") end
-  if _G.CM_BioPanelWeightEdit then _G.CM_BioPanelWeightEdit:SetText((e and e.profile and e.profile.appearance and e.profile.appearance.weight) or "") end
-  if _G.CM_BioPanelEyesEdit then _G.CM_BioPanelEyesEdit:SetText((e and e.profile and e.profile.appearance and e.profile.appearance.eyes) or "") end
-  if _G.CM_BioPanelHairEdit then _G.CM_BioPanelHairEdit:SetText((e and e.profile and e.profile.appearance and e.profile.appearance.hair) or "") end
-  if _G.CM_BioPanelAliasEdit then _G.CM_BioPanelAliasEdit:SetText((e and e.profile and e.profile.alias) or "") end
-  if _G.CM_BioPanelLanguagesEdit then _G.CM_BioPanelLanguagesEdit:SetText((e and e.profile and e.profile.languages) or "") end
-  if _G.CM_BioPanelProficienciesEdit then _G.CM_BioPanelProficienciesEdit:SetText((e and e.profile and e.profile.proficiencies) or "") end
-  if _G.CM_BioPanelPersonalityEdit then _G.CM_BioPanelPersonalityEdit:SetText((e and e.profile and e.profile.personality) or "") end
-  if _G.CM_BioPanelIdealsEdit then _G.CM_BioPanelIdealsEdit:SetText((e and e.profile and e.profile.ideals) or "") end
-  if _G.CM_BioPanelBondsEdit then _G.CM_BioPanelBondsEdit:SetText((e and e.profile and e.profile.bonds) or "") end
-  if _G.CM_BioPanelFlawsEdit then _G.CM_BioPanelFlawsEdit:SetText((e and e.profile and e.profile.flaws) or "") end
-  if _G.CM_BioPanelHobbiesEdit then _G.CM_BioPanelHobbiesEdit:SetText((e and e.profile and e.profile.hobbies) or "") end
-  -- Main page preview removed
-  -- Bio panel no longer uses a scroll frame
-  if _G.CM_OptionsPanelShowOnTarget then _G.CM_OptionsPanelShowOnTarget:SetChecked(CharacterMemoryDB.settings.showOnTarget and true or false) end
-  if _G.CM_OptionsPanelShowBadges then _G.CM_OptionsPanelShowBadges:SetChecked((CharacterMemoryDB.settings.showBadges ~= false)) end
-  if _G.CM_OptionsPanelEnableInspect then _G.CM_OptionsPanelEnableInspect:SetChecked((CharacterMemoryDB.settings.enableInspect ~= false)) end
-  if _G.CM_OptionsPanelEnableProximity then _G.CM_OptionsPanelEnableProximity:SetChecked((CharacterMemoryDB.settings.enableProximity ~= false)) end
-  if _G.CM_OptionsPanelAutoShare then _G.CM_OptionsPanelAutoShare:SetChecked((CharacterMemoryDB.settings.shareEnabled == true)) end
-  -- Do not force tab swap here; Bio subpage calls this too
-end
-
-function CharacterMemory_OptionsSave()
-  CharacterMemoryDB = CharacterMemoryDB or { settings = {} }
-  CharacterMemoryDB.settings = CharacterMemoryDB.settings or {}
-  CharacterMemoryDB.entries = CharacterMemoryDB.entries or {}
-  -- Save show on target
-  if _G.CM_OptionsPanelShowOnTarget then
-    CharacterMemoryDB.settings.showOnTarget = _G.CM_OptionsPanelShowOnTarget:GetChecked() and true or false
-  end
-  if _G.CM_OptionsPanelShowBadges then CharacterMemoryDB.settings.showBadges = _G.CM_OptionsPanelShowBadges:GetChecked() and true or false end
-  if _G.CM_OptionsPanelEnableInspect then CharacterMemoryDB.settings.enableInspect = _G.CM_OptionsPanelEnableInspect:GetChecked() and true or false end
-  if _G.CM_OptionsPanelEnableProximity then CharacterMemoryDB.settings.enableProximity = _G.CM_OptionsPanelEnableProximity:GetChecked() and true or false end
-  if _G.CM_OptionsPanelAutoShare then CharacterMemoryDB.settings.shareEnabled = _G.CM_OptionsPanelAutoShare:GetChecked() and true or false end
-  -- Save player bio
-  local guid = UnitGUID and UnitGUID("player")
-  if guid then
-    local e = CharacterMemoryDB.entries[guid] or { profile = {} }
-    e.profile = e.profile or {}
-    e.profile.appearance = e.profile.appearance or {}
-    do
-      local text = ""
-      if _G.CM_BioPanelBioEdit and _G.CM_BioPanelBioEdit.GetText then
-        text = _G.CM_BioPanelBioEdit:GetText() or ""
-      elseif _G.CM_OptionsPanelBioEdit and _G.CM_OptionsPanelBioEdit.GetText then
-        text = _G.CM_OptionsPanelBioEdit:GetText() or ""
-      end
-      -- Mirror user's authored RP Bio into both fields: background (for local profile)
-      -- and publicBio (for sharing/preview by other users)
-      e.profile.background = text
-      e.profile.publicBio = text
-    end
-    -- Save identity fields
-    -- Prefer values from Bio page if present
-    if _G.CM_BioPanelTitleEdit then e.profile.title = _G.CM_BioPanelTitleEdit:GetText() or "" end
-    if _G.CM_BioPanelPronounsEdit then e.profile.pronouns = _G.CM_BioPanelPronounsEdit:GetText() or "" end
-    if _G.CM_BioPanelAlignmentEdit then e.profile.alignment = _G.CM_BioPanelAlignmentEdit:GetText() or "" end
-    if _G.CM_BioPanelTagsEdit then e.profile.tags = _G.CM_BioPanelTagsEdit:GetText() or "" end
-    if _G.CM_BioPanelAgeEdit then e.profile.appearance.age = _G.CM_BioPanelAgeEdit:GetText() or "" end
-    if _G.CM_BioPanelHeightEdit then e.profile.appearance.height = _G.CM_BioPanelHeightEdit:GetText() or "" end
-    if _G.CM_BioPanelWeightEdit then e.profile.appearance.weight = _G.CM_BioPanelWeightEdit:GetText() or "" end
-    if _G.CM_BioPanelEyesEdit then e.profile.appearance.eyes = _G.CM_BioPanelEyesEdit:GetText() or "" end
-    if _G.CM_BioPanelHairEdit then e.profile.appearance.hair = _G.CM_BioPanelHairEdit:GetText() or "" end
-    if _G.CM_BioPanelAliasEdit then e.profile.alias = _G.CM_BioPanelAliasEdit:GetText() or "" end
-    if _G.CM_BioPanelLanguagesEdit then e.profile.languages = _G.CM_BioPanelLanguagesEdit:GetText() or "" end
-    if _G.CM_BioPanelProficienciesEdit then e.profile.proficiencies = _G.CM_BioPanelProficienciesEdit:GetText() or "" end
-    if _G.CM_BioPanelPersonalityEdit then e.profile.personality = _G.CM_BioPanelPersonalityEdit:GetText() or "" end
-    if _G.CM_BioPanelIdealsEdit then e.profile.ideals = _G.CM_BioPanelIdealsEdit:GetText() or "" end
-    if _G.CM_BioPanelBondsEdit then e.profile.bonds = _G.CM_BioPanelBondsEdit:GetText() or "" end
-    if _G.CM_BioPanelFlawsEdit then e.profile.flaws = _G.CM_BioPanelFlawsEdit:GetText() or "" end
-    if _G.CM_BioPanelHobbiesEdit then e.profile.hobbies = _G.CM_BioPanelHobbiesEdit:GetText() or "" end
-    -- Ensure player's own entry has core identity for list/profile
-    e.isPlayer = true
-    local name, realm = UnitName("player")
-    e.name = (realm and realm ~= "" ) and (name.."-"..realm) or name or e.name
-    local className, classFile = UnitClass("player"); e.class, e.classFile = className, classFile
-    local raceName, raceFile = UnitRace("player"); e.race, e.raceFile = raceName, raceFile
-    e.charLevel = UnitLevel("player") or e.charLevel
-    e.faction = UnitFactionGroup("player") or e.faction
-    e.gender = UnitSex("player") or e.gender
-    e.guildName = select(1, GetGuildInfo("player")) or e.guildName
-    CharacterMemoryDB.entries[guid] = e
-  end
-  CharacterMemory_UpdateUI()
-  -- Select self in journal for immediate preview
-  if _G.CMJ and _G.CMJ.Select and UnitGUID and UnitGUID("player") then
-    pcall(_G.CMJ.Select, UnitGUID("player"))
-  end
-end
-
-function CharacterMemory_OptionsClearSelected()
-  local guid = (_G.State and _G.State.currentGUID) or (_G.CharacterMemoryDB and _G.CharacterMemoryDB.settings and _G.CharacterMemoryDB.settings.ui and _G.CharacterMemoryDB.settings.ui.journal and _G.CharacterMemoryDB.settings.ui.journal.lastSelected) or nil
-  if guid then
-    CharacterMemoryDB.entries[guid] = nil
-    if _G.State then _G.State.currentGUID = nil end
-    CharacterMemory_UpdateUI()
-    printMessage("Cleared selected character memory.")
-  end
-end
-
-function CharacterMemory_OptionsOnBioChanged(editBox)
-  -- Only used on the Bio page now; char count there uses same name if needed
-  if _G.CM_OptionsPanelBioCount and _G.CM_OptionsPanelBioCount.fs then
-    _G.CM_OptionsPanelBioCount.fs:SetText(string.format("%d chars", #(editBox:GetText() or "")))
-  end
-end
-
--- Simple tab switcher for the settings canvas
-function CharacterMemory_OptionsTabSwap(which)
-  local generalVisible = (which == "General")
-  -- Guard missing nodes during load; toggle the entire group
-  if _G.CM_OptionsPanelPrefsHeader then _G.CM_OptionsPanelPrefsHeader:SetShown(generalVisible) end
-  if _G.CM_OptionsPanelGeneralGroup then _G.CM_OptionsPanelGeneralGroup:SetShown(generalVisible) end
-  -- Footer buttons are shared across tabs; always show
-
-  local bioVisible = (which == "Bio")
-  if _G.CM_BioPanel then _G.CM_BioPanel:SetShown(bioVisible) end
-  -- Toggle tab button enabled states for feedback
-  local tabG = _G.CM_OptionsPanelTabBarTabGeneral
-  local tabB = _G.CM_OptionsPanelTabBarTabBio
-  if tabG and tabG.Disable and tabG.Enable then if generalVisible then tabG:Disable() else tabG:Enable() end end
-  if tabB and tabB.Disable and tabB.Enable then if bioVisible then tabB:Disable() else tabB:Enable() end end
-end
-
+function CharacterMemory_OptionsOnShow() if CMSettings then CMSettings.Load() end end
+function CharacterMemory_OptionsSave() if CMSettings then CMSettings.Save() end end
+-- Preserve old callers without exposing a second profile editor or destructive footer.
+function CharacterMemory_OptionsTabSwap(which) if which == "Bio" then CharacterMemory_OpenCharacterSheet() end end
 function CharacterMemory_OptionsPublish()
-  -- Share your bio to current group (addon whisper per member when possible)
-  local guid = UnitGUID and UnitGUID("player")
-  if not guid or not CharacterMemoryDB or not CharacterMemoryDB.entries then return end
-  local e = CharacterMemoryDB.entries[guid]
-  local bio = e and e.profile and e.profile.background
-  if not bio or bio == "" then return end
-  -- Iterate group roster and whisper via addon channel if available
-  if IsInRaid() then
-    for i=1, GetNumGroupMembers() do
-      local name = GetRaidRosterInfo(i)
-      if name and C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        C_ChatInfo.SendAddonMessage("CM1", "BIO|"..guid.."|"..escapePipes(bio), "WHISPER", name)
-      end
-    end
-  elseif IsInGroup() then
-    for i=1, GetNumSubgroupMembers() do
-      local unit = "party"..i
-      if UnitExists(unit) then
-        local n, r = UnitName(unit)
-        local full = r and (n.."-"..r) or n
-        if full and C_ChatInfo and C_ChatInfo.SendAddonMessage then
-          C_ChatInfo.SendAddonMessage("CM1", "BIO|"..guid.."|"..escapePipes(bio), "WHISPER", full)
-        end
-      end
-    end
-  end
+  CharacterMemory_OpenCharacterSheet()
+  printMessage("Enable Share public profile in your character sheet, then Save.")
+end
+function CharacterMemory_OptionsClearSelected()
+  local guid = CMUI.GetSelectedEntry and CMUI.GetSelectedEntry()
+  if guid and CMUI.DeleteEntry then CMUI.DeleteEntry(guid) end
 end
 
-local function requestBioFrom(targetFullName)
-  if not targetFullName or targetFullName == "" then return end
-  if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-    C_ChatInfo.SendAddonMessage(ADDON_MSG_PREFIX, "REQBIO|"..(getPlayerGUID() or ""), "WHISPER", targetFullName)
+function CharacterMemory_RequestBioFrom(targetFullName, guid)
+  if not guid then
+    local key = CMCompat.NameKey(targetFullName)
+    for id, e in pairs(CharacterMemoryDB.entries or {}) do
+      if type(e) == "table" and key and CMCompat.NameKey(e.name) == key then guid = id; break end
+    end
   end
-end
-
--- Exported wrapper so UI modules can request a bio by player name
-function CharacterMemory_RequestBioFrom(targetFullName)
-  requestBioFrom(targetFullName)
+  return CMProtocol.Request(targetFullName, guid)
 end
 
 -- -----------------------------------------------------------------------------
@@ -481,8 +226,8 @@ local THEME = {
   -- Prefer TGA parchment if provided; fallback to generic only if missing
   bgParchment = (function()
     local tga = "Interface/AddOns/CharacterMemory/Art/parchment.tga"
-    local ok = pcall(GetFileIDFromPath, tga)
-    if ok then return tga else return "Interface/FrameGeneral/UI-Background-Rock" end
+    local ok, fileID = pcall(GetFileIDFromPath, tga)
+    if ok and fileID and fileID ~= 0 then return tga else return "Interface/FrameGeneral/UI-Background-Rock" end
   end)(),
   border = "Interface/Tooltips/UI-Tooltip-Border",
   quillTex = "Interface/PaperDollInfoFrame/Character-TitleIcon",
@@ -491,8 +236,8 @@ local THEME = {
 -- Prefer local TGA art if it exists; otherwise use provided fallback
 local function preferArt(localBaseName, fallback)
   local tga = "Interface/AddOns/CharacterMemory/Art/" .. localBaseName .. ".tga"
-  local ok = pcall(GetFileIDFromPath, tga)
-  if ok then return tga end
+  local ok, fileID = pcall(GetFileIDFromPath, tga)
+  if ok and fileID and fileID ~= 0 then return tga end
   return fallback
 end
 
@@ -671,7 +416,8 @@ CMUI.FmtTimeShort = FmtTimeShort
 
 function computeLevelFromXP(xp)
   -- OPT: Use local math bindings
-  xp = xp or 0
+  xp = tonumber(xp) or 0
+  if xp ~= xp or xp == math.huge or xp < 0 then xp = 0 end
   return math_floor(math_sqrt(xp / 100))
 end
 
@@ -683,6 +429,9 @@ function computeTierFromLevel(level)
   end
   return "Stranger"
 end
+
+_G.computeLevelFromXP = computeLevelFromXP
+_G.computeTierFromLevel = computeTierFromLevel
 
 -- Next level threshold helpers for progress bar
 local function xpForLevel(level)
@@ -724,6 +473,7 @@ function CharacterMemory_UpdatePlayerItemLevel()
 end
 
 function CharacterMemory_RequestTargetItemLevel()
+  if CharacterMemoryDB.settings.enableInspect == false then return end
   if not UnitExists or not UnitIsPlayer or not UnitGUID then return end
   if not canInspectNow() then return end
   if not CanInspect or not NotifyInspect then return end
@@ -803,7 +553,7 @@ local lastChatTickAt = 0
 -- -----------------------------------------------------------------------------
 
 function getOrCreateEntry(guid)
-  if not guid then return nil end
+  if type(guid) ~= "string" or not guid:match("^Player%-") then return nil end
   local e = CharacterMemoryDB.entries[guid]
   if not e then
     -- Only create entries for real player GUIDs; do not persist NPCs/creatures
@@ -871,6 +621,13 @@ function getOrCreateEntry(guid)
     }
     CharacterMemoryDB.entries[guid] = e
   end
+  if type(e) ~= "table" then return nil end
+  e.guid = guid
+  e.metCount = tonumber(e.metCount) or 0
+  e.xp = tonumber(e.xp) or 0
+  e.profile = e.profile or {}
+  e.stats = e.stats or {}
+  CMChronicle.Prepare(e, guid)
   return e
 end
 
@@ -890,15 +647,16 @@ end
 -- XP engine
 -- -----------------------------------------------------------------------------
 
-local function refreshRelationship(entry)
+function refreshRelationship(entry)
   entry.level = computeLevelFromXP(entry.xp)
   
   -- Hard requirement: Strangers need 3 completed achievements to become Acquaintances
-  if entry.level == 1 then
-    local achievementSummary = _G.CharacterMemory_GetAchievementSummary and _G.CharacterMemory_GetAchievementSummary(entry.guid or "")
+  if entry.level >= 1 then
+    local achievementSummary = _G.CharacterMemory_GetAchievementSummary and _G.CharacterMemory_GetAchievementSummary(entry.guid)
     local completedAchievements = achievementSummary and achievementSummary.done or 0
     
-    if completedAchievements < 3 then
+    if completedAchievements >= 3 then entry.relationshipUnlocked = true end
+    if not entry.relationshipUnlocked then
       -- Force them to stay at level 0 (Stranger) until they complete 3 achievements
       entry.level = 0
       entry.tier = "Stranger"
@@ -1028,11 +786,11 @@ end
 
 local function shareToGroupOrSay(text)
   if IsInRaid() then
-    SendChatMessage(text, "RAID")
+    return CMCompat.SendChat(text, "RAID")
   elseif IsInGroup() then
-    SendChatMessage(text, "PARTY")
+    return CMCompat.SendChat(text, "PARTY")
   else
-    SendChatMessage(text, "SAY")
+    return CMCompat.SendChat(text, "SAY")
   end
 end
 
@@ -1079,7 +837,7 @@ local DungeonRun = {
   credited = false       -- whether we already counted a completion for this run
 }
 
-local function resetDungeonRun()
+function resetDungeonRun()
   DungeonRun.active, DungeonRun.instanceID, DungeonRun.lastBossKillAt, DungeonRun.credited = false, nil, 0, false
 end
 
@@ -1105,20 +863,22 @@ local function forEachGroupmateGUID(callback)
   end
 end
 
-local function awardToAllGroupmates(amount, reason)
+function awardToAllGroupmates(amount, reason)
   if not amount or amount <= 0 then return end
   forEachGroupmateGUID(function(guid)
     awardXP(guid, amount, reason)
   end)
 end
 
-local function incStatForAllGroupmates(key, amount)
+function incStatForAllGroupmates(key, amount)
   forEachGroupmateGUID(function(guid)
     incStat(guid, key, amount or 1)
   end)
 end
 
-local function maybeCreditDungeonOnExit()
+function maybeCreditDungeonOnExit()
+  local inside, instanceType = IsInInstance()
+  if inside and instanceType == "party" then return end
   -- If we recently killed a boss in a 5-man and we leave the instance without
   -- seeing LFG/Scenario/Challenge completion events, count a completion once.
   if not DungeonRun.active or DungeonRun.credited then return end
@@ -1176,17 +936,33 @@ local function getGroupmateGUIDByName(name)
 end
 
 local function handleTargetChanged()
+  if InCombatLockdown() then return end
+  local nextGUID = UnitExists("target") and UnitGUID("target")
+  local previousTarget = State.currentGUID
+  if previousTarget and previousTarget ~= nextGUID then
+    local previousEntry = CharacterMemoryDB.entries[previousTarget]
+    if previousEntry then
+      previousEntry._lastSeenStamp, previousEntry.lastSeenAt = time(), nowUTCString()
+    end
+  end
   if not UnitExists("target") then
     State.currentGUID = nil
+    if CMJourney then CMJourney.CancelNotice() end
     if State.frame then State.frame:Hide() end
     return
   end
 
   local guid = UnitGUID("target")
-  if not guid then return end
+  if not guid then if CMJourney then CMJourney.CancelNotice() end; return end
+  if guid == UnitGUID("player") then
+    State.currentGUID = nil
+    if CMJourney then CMJourney.CancelNotice() end
+    return
+  end
   -- Ignore non-player GUIDs; do not create or update entries for NPCs/creatures
   if not guid:match("^Player%-") then
     State.currentGUID = nil
+    if CMJourney then CMJourney.CancelNotice() end
     return
   end
   State.currentGUID = guid
@@ -1194,6 +970,7 @@ local function handleTargetChanged()
   local entry = getOrCreateEntry(guid)
   if not entry then return end
   local name, realm = UnitName("target")
+  if not name then return end
   local fullName = realm and (name .. "-" .. realm) or name
   entry.displayName = fullName
   entry.name = fullName or entry.name or "Unknown"
@@ -1226,6 +1003,8 @@ local function handleTargetChanged()
   end
 
   local nowStamp = time()
+  if previousTarget == guid then entry._lastSeenStamp = nowStamp end
+  local previousSeenAt = entry._lastSeenStamp
   local where = getZoneContext()
 
   local firstMeet = false
@@ -1235,7 +1014,8 @@ local function handleTargetChanged()
     firstMeet = true
   end
 
-  entry.metCount = (entry.metCount or 0) + 1
+  local newEncounter = firstMeet or not entry._lastSeenStamp or nowStamp - entry._lastSeenStamp >= 600
+  if newEncounter then entry.metCount = (entry.metCount or 0) + 1 end
   entry.lastSeenAt = nowUTCString()
   entry.lastSeenWhere = where
 
@@ -1244,19 +1024,22 @@ local function handleTargetChanged()
     if (nowStamp - entry._lastSeenStamp) >= 600 then
       awardXP(guid, 10, "retarget")
       incStat(guid, "reconnects", 1)
+
     end
   end
   entry._lastSeenStamp = nowStamp
 
   -- First meet XP
   if firstMeet then
-    awardXP(guid, 50, "first meet")
     incStat(guid, "firstMeets", 1)
+    awardXP(guid, 50, "first meet")
+    CMChronicle.Offer(guid, "meeting", where)
     if CharacterMemoryDB.settings.shareEnabled then
-      shareToGroupOrSay(string_format("First met %s in %s.", FmtDate(entry.firstMetAt), FmtZone(entry.firstMetWhere)))
+      printMessage("A new acquaintance: " .. CMCompat.Display(shortName(entry.name)) .. ". A moment is waiting in Notes → Memories.")
     end
   end
 
+  if CMJourney then CMJourney.OnTarget(guid, previousSeenAt, firstMeet) end
   showIfSettingAllows()
   if _G.CMJ and _G.CMJ.NotifyDataChanged then _G.CMJ.NotifyDataChanged() end
 end
@@ -1264,7 +1047,7 @@ end
 -- CHAT_MSG_TEXT_EMOTE: positive emotes
 local function handleTextEmote(event, text, playerName)
   -- Emotes are target/proximity based (no group required), but must be tied to current target
-  if not State.currentGUID then return end
+  if not State.currentGUID or CMCompat.IsSecret(text) or CMCompat.IsSecret(playerName) or type(text) ~= "string" then return end
   local entry = CharacterMemoryDB.entries[State.currentGUID]
   if not entry or not entry.isPlayer then return end
   local emote = text and text:match("^%*(%w+)") -- rarely of the form "PlayerName waves" in text emotes; safer is to use standard parsing
@@ -1292,27 +1075,26 @@ end
 
 -- Whisper exchange
 local function handleWhisper(event, text, otherName)
+  if CMCompat.IsSecret(otherName) or type(otherName) ~= "string" then return end
   -- Whispers are target-based (no group required)
   if not State.currentGUID then return end
   local entry = CharacterMemoryDB.entries[State.currentGUID]
   if not entry or not entry.isPlayer then return end
   -- otherName is sender for CHAT_MSG_WHISPER, recipient for CHAT_MSG_WHISPER_INFORM
   if not otherName then return end
-  if shortName(otherName) ~= shortName(entry.name) then return end
+  if CMCompat.NameKey(otherName) ~= CMCompat.NameKey(entry.name) then return end
   if canFireCooldown(Cooldowns.whisper, State.currentGUID, 60) then
     awardXP(State.currentGUID, 12, "whisper")
     incStat(State.currentGUID, "whispers", 1)
+    CMChronicle.Offer(State.currentGUID, "conversation", getZoneContext())
   end
 end
 
 -- Trade
 local function handleTradeClosed()
-  -- Trades are target-based (no group required)
-  if not State.currentGUID then return end
-  local e = CharacterMemoryDB.entries[State.currentGUID]
-  if not e or not e.isPlayer then return end
-  awardXP(State.currentGUID, 60, "trade")
-  incStat(State.currentGUID, "trades", 1)
+  -- Closing a trade is not evidence that it completed. Keep its partner briefly
+  -- so the locale-independent ERR_TRADE_COMPLETE notification can confirm it.
+  State.tradeClosedAt = GetTime()
 end
 
 -- Duel
@@ -1361,6 +1143,7 @@ local function tavernTick()
     if nearby and canFireCooldown(Cooldowns.tavernTick, guid, 120) then
       awardXP(guid, 20, "tavern")
       incStat(guid, "tavernTicks", 1)
+      CMChronicle.Offer(guid, "shared_rest", getZoneContext())
     end
   end)
 end
@@ -1396,6 +1179,8 @@ local function handleEncounterEnd(encounterID, encounterName, difficultyID, raid
     AwardedEncounters[guid] = AwardedEncounters[guid] or {}
     if not AwardedEncounters[guid][encounterID] then
       AwardedEncounters[guid][encounterID] = true
+      getOrCreateEntry(guid)
+      CMChronicle.Offer(guid, "adventure", getZoneContext())
       if instType == "party" then
         awardXP(guid, 40, "boss kill")
         incStat(guid, "bossKillsDungeon", 1)
@@ -1425,22 +1210,22 @@ local function handleEncounterEndAny(encounterID, encounterName, difficultyID, r
   end
 end
 
-local function handleLFGCompletion()
+function handleLFGCompletion()
   awardToAllGroupmates(100, "dungeon complete")
   incStatForAllGroupmates("dungeonCompletions", 1)
 end
 
-local function handleChallengeModeCompleted()
+function handleChallengeModeCompleted()
   awardToAllGroupmates(120, "mythic+ complete")
   incStatForAllGroupmates("mplusCompletions", 1)
 end
 
-local function handleScenarioCompleted()
+function handleScenarioCompleted()
   awardToAllGroupmates(60, "scenario complete")
   incStatForAllGroupmates("scenarioCompletions", 1)
 end
 
-local function handlePvpMatchComplete()
+function handlePvpMatchComplete()
   local inInstance, instType = IsInInstance()
   if not inInstance then return end
   if instType == "pvp" then
@@ -1459,6 +1244,11 @@ end
 local function printHelp()
   printMessage("/cm help — Show commands")
   printMessage("/cm note <text> — Save note for current target")
+  printMessage("/cm remember <text> — Keep a private memory")
+  printMessage("/cm recall [older|newer|first|latest] — Read your memories")
+  printMessage("/cm continue — Pick up the selected unfinished story")
+  printMessage("/cm story <title> — Start a private story thread")
+  printMessage("/cm status — Show client compatibility information")
   printMessage("/cm share — Share current memory")
   printMessage("/cm show — Show the panel")
   printMessage("/cm hide — Hide the panel")
@@ -1479,6 +1269,11 @@ SLASH_CHARACTERMEMORY1 = "/cm"
 SLASH_CHARACTERMEMORY2 = "/cmem"
 SLASH_CHARACTERMEMORY3 = "/charactermemory"
 SLASH_CHARACTERMEMORY4 = "/cmemory"
+local function storyPerson()
+  local selected = CMUI.GetSelectedEntry and CMUI.GetSelectedEntry()
+  if CMJ.refs.root and CMJ.refs.root:IsShown() and selected then return selected end
+  return State.currentGUID or selected
+end
 SlashCmdList["CHARACTERMEMORY"] = function(msg)
   msg = msg or ""
   local cmd, rest = msg:match("^(%S+)%s*(.-)$")
@@ -1493,6 +1288,31 @@ SlashCmdList["CHARACTERMEMORY"] = function(msg)
     e.notes = rest or ""
     printMessage("Saved note for " .. shortName(e.name))
     CharacterMemory_UpdateUI()
+
+  elseif cmd == "remember" then
+    local memoryID, err = CMChronicle.Remember(State.currentGUID, nil, rest, nil, getZoneContext())
+    printMessage(memoryID and "Memory added to your journal." or err)
+
+  elseif cmd == "recall" then
+    local guid = storyPerson()
+    if guid and CharacterMemoryDB.entries[guid] then
+      if rest == "" then CMJourney.Read(guid)
+      elseif not CMJourney.Browse(guid, rest:lower()) then printMessage("Use /cm recall older, newer, first, or latest.") end
+    else printMessage("Target someone you know, or choose a person in your journal.") end
+
+  elseif cmd == "continue" then
+    local guid = storyPerson()
+    if not guid then printMessage("Choose a person and an unfinished story in your journal.") return end
+    local ok, err = CMJourney.Continue(guid)
+    if not ok then printMessage(err) end
+
+  elseif cmd == "story" then
+    local storyID, err = CMChronicle.AddStory(State.currentGUID, rest, "", getZoneContext())
+    printMessage(storyID and "Story thread added to your journal." or err)
+
+  elseif cmd == "status" then
+    local client = CMCompat.ClientInfo()
+    printMessage(string_format("RP Journal 0.4.0 · client %s (%s), interface %s", client.version, client.build, tostring(client.interface)))
 
   elseif cmd == "share" then
     CharacterMemory_Share()
@@ -1628,8 +1448,24 @@ evt:SetScript("OnEvent", function(self, event, ...)
   elseif event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_WHISPER_INFORM" then
     handleWhisper(event, ...)
 
+  elseif event == "TRADE_SHOW" then
+    State.tradeGUID = UnitGUID("NPC")
+    State.tradeStartedAt = GetTime()
+    State.tradeClosedAt = nil
+
   elseif event == "TRADE_CLOSED" then
     handleTradeClosed()
+
+  elseif event == "UI_INFO_MESSAGE" then
+    local _, message = ...
+    if ERR_TRADE_COMPLETE and message == ERR_TRADE_COMPLETE and State.tradeGUID
+      and GetTime() - (State.tradeStartedAt or 0) <= 600
+      and (not State.tradeClosedAt or GetTime() - State.tradeClosedAt <= 5) then
+      local guid = State.tradeGUID
+      State.tradeGUID = nil
+      incStat(guid, "trades", 1)
+      awardXP(guid, 60, "trade")
+    end
 
   elseif event == "DUEL_FINISHED" then
     handleDuelFinished()
@@ -1657,20 +1493,15 @@ evt:SetScript("OnEvent", function(self, event, ...)
     handlePvpMatchComplete()
 
   elseif event == "PLAYER_REGEN_DISABLED" then
-    -- entering combat
-    if State.frame and State.frame:IsShown() then
-      State.wasOpenBeforeCombat = true
-      State.frame:Hide()
-    else
-      State.wasOpenBeforeCombat = false
-    end
+    local root = CMJ and CMJ.refs and CMJ.refs.root
+    State.wasOpenBeforeCombat = root and root:IsShown() or false
+    if State.wasOpenBeforeCombat then root:Hide() end
 
   elseif event == "PLAYER_REGEN_ENABLED" then
-    -- leaving combat
-    if State.wasOpenBeforeCombat then
-      CharacterMemory_UpdateUI()
-      State.wasOpenBeforeCombat = false
-    end
+    local root = CMJ and CMJ.refs and CMJ.refs.root
+    if State.wasOpenBeforeCombat and root then root:Show() end
+    State.wasOpenBeforeCombat = false
+    handleTargetChanged()
 
   elseif event == "INSPECT_READY" then
     local inspectedGuid = ...
@@ -1704,12 +1535,16 @@ evt:SetScript("OnEvent", function(self, event, ...)
     maybeCreditDungeonOnExit()
 
   elseif event == "PLAYER_LOGOUT" then
+    local current = State.currentGUID and CharacterMemoryDB.entries[State.currentGUID]
+    if current then current._lastSeenStamp, current.lastSeenAt = time(), nowUTCString() end
     -- OPT: Cancel tickers to avoid orphan timers on reload
+    CMProtocol.Stop()
     if _G.CharacterMemory_Tickers then
       for _, tk in ipairs(_G.CharacterMemory_Tickers) do pcall(tk.Cancel, tk) end
     end
 
   elseif event == "NAME_PLATE_UNIT_ADDED" then
+    if CharacterMemoryDB.settings.enableProximity == false or InCombatLockdown() then return end
     local unit = ...
     if not unit or not UnitExists(unit) then return end
     local guid = UnitGUID(unit)
@@ -1727,89 +1562,48 @@ evt:SetScript("OnEvent", function(self, event, ...)
   end
 end)
 
-evt:RegisterEvent("ADDON_LOADED")
-evt:RegisterEvent("PLAYER_TARGET_CHANGED")
-evt:RegisterEvent("CHAT_MSG_TEXT_EMOTE")
-evt:RegisterEvent("READY_CHECK")
-evt:RegisterEvent("PARTY_INVITE_REQUEST")
-evt:RegisterEvent("GROUP_ROSTER_UPDATE")
-evt:RegisterEvent("CHAT_MSG_WHISPER")
-evt:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
-evt:RegisterEvent("TRADE_CLOSED")
-evt:RegisterEvent("DUEL_FINISHED")
-evt:RegisterEvent("ENCOUNTER_END")
-evt:RegisterEvent("ENCOUNTER_START")
-evt:RegisterEvent("LFG_COMPLETION_REWARD")
-evt:RegisterEvent("CHALLENGE_MODE_COMPLETED")
-evt:RegisterEvent("SCENARIO_COMPLETED")
-evt:RegisterEvent("PVP_MATCH_COMPLETE")
-evt:RegisterEvent("BATTLEFIELDS_CLOSED")
-evt:RegisterEvent("PLAYER_REGEN_DISABLED")
-evt:RegisterEvent("PLAYER_REGEN_ENABLED")
-evt:RegisterEvent("ZONE_CHANGED")
-evt:RegisterEvent("ZONE_CHANGED_INDOORS")
-evt:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-evt:RegisterEvent("PLAYER_LOGOUT")
-evt:RegisterEvent("GUILD_ROSTER_UPDATE")
-evt:RegisterEvent("PLAYER_GUILD_UPDATE")
-evt:RegisterEvent("FRIENDLIST_UPDATE")
-evt:RegisterEvent("NAME_PLATE_UNIT_ADDED")
-evt:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
-evt:RegisterEvent("INSPECT_READY")
-evt:RegisterEvent("UNIT_INVENTORY_CHANGED")
-evt:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+CMCompat.RegisterEvent(evt, "ADDON_LOADED")
+CMCompat.RegisterEvent(evt, "PLAYER_TARGET_CHANGED")
+CMCompat.RegisterEvent(evt, "CHAT_MSG_TEXT_EMOTE")
+CMCompat.RegisterEvent(evt, "READY_CHECK")
+CMCompat.RegisterEvent(evt, "PARTY_INVITE_REQUEST")
+CMCompat.RegisterEvent(evt, "GROUP_ROSTER_UPDATE")
+CMCompat.RegisterEvent(evt, "CHAT_MSG_WHISPER")
+CMCompat.RegisterEvent(evt, "CHAT_MSG_WHISPER_INFORM")
+CMCompat.RegisterEvent(evt, "TRADE_CLOSED")
+CMCompat.RegisterEvent(evt, "TRADE_SHOW")
+CMCompat.RegisterEvent(evt, "UI_INFO_MESSAGE")
+CMCompat.RegisterEvent(evt, "DUEL_FINISHED")
+CMCompat.RegisterEvent(evt, "ENCOUNTER_END")
+CMCompat.RegisterEvent(evt, "ENCOUNTER_START")
+CMCompat.RegisterEvent(evt, "LFG_COMPLETION_REWARD")
+CMCompat.RegisterEvent(evt, "CHALLENGE_MODE_COMPLETED")
+CMCompat.RegisterEvent(evt, "SCENARIO_COMPLETED")
+CMCompat.RegisterEvent(evt, "PVP_MATCH_COMPLETE")
+CMCompat.RegisterEvent(evt, "BATTLEFIELDS_CLOSED")
+CMCompat.RegisterEvent(evt, "PLAYER_REGEN_DISABLED")
+CMCompat.RegisterEvent(evt, "PLAYER_REGEN_ENABLED")
+CMCompat.RegisterEvent(evt, "ZONE_CHANGED")
+CMCompat.RegisterEvent(evt, "ZONE_CHANGED_INDOORS")
+CMCompat.RegisterEvent(evt, "ZONE_CHANGED_NEW_AREA")
+CMCompat.RegisterEvent(evt, "PLAYER_LOGOUT")
+CMCompat.RegisterEvent(evt, "GUILD_ROSTER_UPDATE")
+CMCompat.RegisterEvent(evt, "PLAYER_GUILD_UPDATE")
+CMCompat.RegisterEvent(evt, "FRIENDLIST_UPDATE")
+CMCompat.RegisterEvent(evt, "NAME_PLATE_UNIT_ADDED")
+CMCompat.RegisterEvent(evt, "NAME_PLATE_UNIT_REMOVED")
+CMCompat.RegisterEvent(evt, "INSPECT_READY")
+CMCompat.RegisterEvent(evt, "UNIT_INVENTORY_CHANGED")
+CMCompat.RegisterEvent(evt, "PLAYER_EQUIPMENT_CHANGED")
 
--- Addon message handling for bio exchange
+-- Versioned public-profile transport. No unsolicited profile writes are accepted.
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
-  pcall(C_ChatInfo.RegisterAddonMessagePrefix, ADDON_MSG_PREFIX)
+  pcall(C_ChatInfo.RegisterAddonMessagePrefix, CMProtocol.PREFIX)
 end
-
-local function onAddonMessage(prefix, message, channel, sender)
-  if prefix ~= ADDON_MSG_PREFIX then return end
-  local tag, a, b = string.match(message or "", "^(.-)|([^|]*)|?(.*)$")
-  if tag == "REQBIO" then
-    -- Another user is requesting our bio
-    sendBioWhisper(sender)
-  elseif tag == "BIO" then
-    local guid = a and a ~= "" and a or nil
-    -- Split remaining payload fields by pipe
-    local parts = {}
-    if b and b ~= "" then for s in string.gmatch(b, "([^|]*)|?") do if s == nil then break end table.insert(parts, s) end end
-    local function part(i) return unescapePipes(parts[i] or "") end
-    local bio = part(1)
-    local title, pronouns, tags, alias, alignment = part(2), part(3), part(4), part(5), part(6)
-    local languages, proficiencies = part(7), part(8)
-    local age, height, weight, eyes, hair = part(9), part(10), part(11), part(12), part(13)
-    if guid and bio then
-      CharacterMemoryDB.entries = CharacterMemoryDB.entries or {}
-      local e = CharacterMemoryDB.entries[guid] or { profile = {} }
-      e.profile = e.profile or {}
-      -- Store received bio into publicBio field
-      e.profile.publicBio = bio
-      -- Also hydrate identity/details for display if provided
-      if title ~= "" then e.profile.title = title end
-      if pronouns ~= "" then e.profile.pronouns = pronouns end
-      if tags ~= "" then e.profile.tags = tags end
-      if alias ~= "" then e.profile.alias = alias end
-      if alignment ~= "" then e.profile.alignment = alignment end
-      if languages ~= "" then e.profile.languages = languages end
-      if proficiencies ~= "" then e.profile.proficiencies = proficiencies end
-      e.profile.appearance = e.profile.appearance or {}
-      if age ~= "" then e.profile.appearance.age = age end
-      if height ~= "" then e.profile.appearance.height = height end
-      if weight ~= "" then e.profile.appearance.weight = weight end
-      if eyes ~= "" then e.profile.appearance.eyes = eyes end
-      if hair ~= "" then e.profile.appearance.hair = hair end
-      CharacterMemoryDB.entries[guid] = e
-      CharacterMemory_UpdateUI()
-    end
-  end
-end
-
 local bioEvt = CreateFrame("Frame")
-bioEvt:RegisterEvent("CHAT_MSG_ADDON")
+CMCompat.RegisterEvent(bioEvt, "CHAT_MSG_ADDON")
 bioEvt:SetScript("OnEvent", function(_, _, prefix, message, channel, sender)
-  onAddonMessage(prefix, message, channel, sender)
+  CMProtocol.Receive(prefix, message, channel, sender)
 end)
 
 -- Tickers

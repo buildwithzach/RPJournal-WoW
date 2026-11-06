@@ -310,7 +310,9 @@
     </Anchors>
     <Layers>
       <Layer level="BACKGROUND">
-        <Texture file="Interface/AddOns/CharacterMemory/media/cmjournal.png" setAllPoints="true"/>
+        <Texture file="Interface/AddOns/CharacterMemory/media/cmjournal.tga" setAllPoints="true">
+          <TexCoords left="0" right="0.75" top="0" bottom="1"/>
+        </Texture>
       </Layer>
     </Layers>
     <Frames>
@@ -345,7 +347,7 @@
             <Size y="22"/>
             <Anchors>
               <Anchor point="TOPLEFT" x="0" y="-16"/>
-              <Anchor point="RIGHT" x="-120"/>
+              <Anchor point="RIGHT" x="0"/>
             </Anchors>
           </Frame>
           <!-- Filter dropdown placed inside the toolbar row -->
@@ -466,7 +468,7 @@
               <Button name="$parentTabProfile" inherits="UIPanelButtonTemplate" text="Profile">
                 <Size x="84" y="20"/>
                 <Anchors><Anchor point="LEFT" relativeTo="$parentTabOverview" relativePoint="RIGHT" x="8"/></Anchors>
-                <Scripts><OnClick>if CharacterMemory_OpenCharacterSheet then CharacterMemory_OpenCharacterSheet() end</OnClick></Scripts>
+                <Scripts><OnClick>if CMChronicleUI then CMChronicleUI.ShowProfile(CMUI.GetSelectedEntry()) end</OnClick></Scripts>
               </Button>
               <Button name="$parentTabNotes" inherits="UIPanelButtonTemplate" text="Notes">
                 <Size x="84" y="20"/>
@@ -737,278 +739,7 @@
     </Scripts>
   </Frame>
 
-  <!-- Options panel for Interface Options / Settings -->
   <Frame name="CM_OptionsPanel" parent="UIParent" hidden="true">
-    <Anchors>
-      <Anchor point="TOPLEFT"/>
-      <Anchor point="BOTTOMRIGHT"/>
-    </Anchors>
-    <Layers>
-      <Layer level="OVERLAY">
-        <FontString name="$parentTitle" inherits="GameFontNormalLarge" text="Character Memory">
-          <Anchors><Anchor point="TOPLEFT" x="16" y="-16"/></Anchors>
-        </FontString>
-        <FontString name="$parentDesc" inherits="GameFontHighlightSmall" text="Configure your profile and UI preferences.">
-          <Anchors><Anchor point="TOPLEFT" relativeTo="$parentTitle" relativePoint="BOTTOMLEFT" y="-8"/></Anchors>
-        </FontString>
-      </Layer>
-    </Layers>
-    <Frames>
-      <!-- Remove in-panel tabs; navigation now uses Settings subpages -->
-      <!-- Identity fields row -->
-      <!-- Identity moved to RP Bio page -->
-      <Frame name="$parentIdentityHeader" inherits="CMJ_CategoryHeader" hidden="true"/>
-      <EditBox name="$parentTitleEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentTitleLabel" hidden="true"/>
-      <EditBox name="$parentPronounsEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentPronounsLabel" hidden="true"/>
-      <EditBox name="$parentAlignmentEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentAlignmentLabel" hidden="true"/>
-      <EditBox name="$parentTagsEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentTagsLabel" hidden="true"/>
-
-      <!-- Appearance quick stats -->
-      <!-- Appearance & Details moved to RP Bio page -->
-      <Frame name="$parentTraitsHeader" inherits="CMJ_CategoryHeader" hidden="true"/>
-      <EditBox name="$parentAgeEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentAgeLabel" hidden="true"/>
-      <EditBox name="$parentHeightEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentHeightLabel" hidden="true"/>
-      <EditBox name="$parentWeightEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentWeightLabel" hidden="true"/>
-      <EditBox name="$parentEyesEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentEyesLabel" hidden="true"/>
-      <EditBox name="$parentHairEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentHairLabel" hidden="true"/>
-      <EditBox name="$parentAliasEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentAliasLabel" hidden="true"/>
-      <EditBox name="$parentLanguagesEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentLanguagesLabel" hidden="true"/>
-      <EditBox name="$parentProficienciesEdit" inherits="InputBoxTemplate" hidden="true"/>
-      <Frame name="$parentProficienciesLabel" hidden="true"/>
-
-      <!-- Narrative traits -->
-      <!-- Narrative fields moved to RP Bio page; hide on main page -->
-      <EditBox name="$parentPersonalityEdit" inherits="InputBoxTemplate" multiLine="true" hidden="true"/>
-      <Frame name="$parentPersonalityLabel" hidden="true"/>
-      <EditBox name="$parentIdealsEdit" inherits="InputBoxTemplate" multiLine="true" hidden="true"/>
-      <Frame name="$parentIdealsLabel" hidden="true"/>
-      <EditBox name="$parentBondsEdit" inherits="InputBoxTemplate" multiLine="true" hidden="true"/>
-      <Frame name="$parentBondsLabel" hidden="true"/>
-      <EditBox name="$parentFlawsEdit" inherits="InputBoxTemplate" multiLine="true" hidden="true"/>
-      <Frame name="$parentFlawsLabel" hidden="true"/>
-      <EditBox name="$parentHobbiesEdit" inherits="InputBoxTemplate" multiLine="true" hidden="true"/>
-      <Frame name="$parentHobbiesLabel" hidden="true"/>
-      <!-- Placeholder to satisfy any legacy anchors referencing $parentBioEdit on the main options panel -->
-      <EditBox name="$parentBioEdit" inherits="InputBoxTemplate" hidden="true"/>
-
-      <!-- Preferences header and toggles -->
-      <Frame name="$parentPrefsHeader" inherits="CMJ_CategoryHeader">
-        <Anchors><Anchor point="TOPLEFT" relativeTo="$parentDesc" relativePoint="BOTTOMLEFT" y="-16"/><Anchor point="RIGHT" x="-16"/></Anchors>
-        <Layers><Layer level="OVERLAY"><FontString parentKey="text" inherits="GameFontNormalLarge" text="Preferences"/></Layer></Layers>
-      </Frame>
-      <!-- Ensure the General tab group is its own container for easy hide/show -->
-      <Frame name="$parentGeneralGroup">
-        <Anchors>
-          <Anchor point="TOPLEFT" relativeTo="$parentPrefsHeader" relativePoint="BOTTOMLEFT" x="0" y="0"/>
-          <!-- Anchor to the panel bottom with space for the shared footer (approx 40px) -->
-          <Anchor point="BOTTOMRIGHT" relativeTo="$parent" relativePoint="BOTTOMRIGHT" x="-16" y="48"/>
-        </Anchors>
-        <Frames>
-          <!-- General toggles inside the group; keep global names for Lua -->
-          <CheckButton name="CM_OptionsPanelShowOnTarget" inherits="InterfaceOptionsCheckButtonTemplate">
-            <Anchors><Anchor point="TOPLEFT" x="0" y="-12"/></Anchors>
-            <Scripts>
-              <OnLoad>_G[self:GetName().."Text"]:SetText("Show journal when targeting players")</OnLoad>
-              <OnEnter> GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText("Automatically show the journal when you target a player.") </OnEnter>
-              <OnLeave> GameTooltip:Hide() </OnLeave>
-            </Scripts>
-          </CheckButton>
-          <CheckButton name="CM_OptionsPanelShowBadges" inherits="InterfaceOptionsCheckButtonTemplate">
-            <Anchors><Anchor point="TOPLEFT" relativeTo="CM_OptionsPanelShowOnTarget" relativePoint="BOTTOMLEFT" y="-8"/></Anchors>
-            <Scripts>
-              <OnLoad>_G[self:GetName().."Text"]:SetText("Show friend/guild badges")</OnLoad>
-              <OnEnter> GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText("Display friend and guild badges in the journal list.") </OnEnter>
-              <OnLeave> GameTooltip:Hide() </OnLeave>
-            </Scripts>
-          </CheckButton>
-          <CheckButton name="CM_OptionsPanelEnableInspect" inherits="InterfaceOptionsCheckButtonTemplate">
-            <Anchors><Anchor point="TOPLEFT" relativeTo="CM_OptionsPanelShowBadges" relativePoint="BOTTOMLEFT" y="-8"/></Anchors>
-            <Scripts>
-              <OnLoad>_G[self:GetName().."Text"]:SetText("Allow inspecting iLvl for targets")</OnLoad>
-              <OnEnter> GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText("Capture item level where API access is permitted.") </OnEnter>
-              <OnLeave> GameTooltip:Hide() </OnLeave>
-            </Scripts>
-          </CheckButton>
-          <CheckButton name="CM_OptionsPanelEnableProximity" inherits="InterfaceOptionsCheckButtonTemplate">
-            <Anchors><Anchor point="TOPLEFT" relativeTo="CM_OptionsPanelEnableInspect" relativePoint="BOTTOMLEFT" y="-8"/></Anchors>
-            <Scripts>
-              <OnLoad>_G[self:GetName().."Text"]:SetText("Track nearby presence (nameplates)")</OnLoad>
-              <OnEnter> GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText("Counts nameplate presence to increment 'Nearby' stats (lightweight).") </OnEnter>
-              <OnLeave> GameTooltip:Hide() </OnLeave>
-            </Scripts>
-          </CheckButton>
-          <CheckButton name="CM_OptionsPanelAutoShare" inherits="InterfaceOptionsCheckButtonTemplate">
-            <Anchors><Anchor point="TOPLEFT" relativeTo="CM_OptionsPanelEnableProximity" relativePoint="BOTTOMLEFT" y="-8"/></Anchors>
-            <Scripts>
-              <OnLoad>_G[self:GetName().."Text"]:SetText("Auto-share first meet in chat")</OnLoad>
-              <OnEnter> GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText("When you first meet someone, post a short message to party/raid/say.") </OnEnter>
-              <OnLeave> GameTooltip:Hide() </OnLeave>
-            </Scripts>
-          </CheckButton>
-        </Frames>
-      </Frame>
-
-      <!-- Footer with actions visible on all tabs -->
-      <Frame name="$parentFooter" inherits="BackdropTemplate">
-        <Anchors>
-          <Anchor point="LEFT" x="16" y="0"/>
-          <Anchor point="RIGHT" x="-16" y="0"/>
-          <Anchor point="BOTTOM" y="12"/>
-        </Anchors>
-        <Size y="32"/>
-        <Layers>
-          <Layer level="OVERLAY">
-            <Texture parentKey="topLine">
-              <Anchors><Anchor point="TOPLEFT"/><Anchor point="TOPRIGHT"/></Anchors>
-              <Size y="1"/>
-              <Color r="0.6" g="0.5" b="0.3" a="0.7"/>
-            </Texture>
-          </Layer>
-        </Layers>
-      </Frame>
-      <Button name="$parentSave" inherits="UIPanelButtonTemplate" text="Save">
-        <Size x="120" y="24"/>
-        <Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentFooter" relativePoint="BOTTOMLEFT" x="0" y="0"/></Anchors>
-        <Scripts>
-          <OnClick> if CharacterMemory_OptionsSave then CharacterMemory_OptionsSave() end </OnClick>
-        </Scripts>
-      </Button>
-      <Button name="$parentClearSelected" inherits="UIPanelButtonTemplate" text="Clear Selected">
-        <Size x="140" y="24"/>
-        <Anchors><Anchor point="LEFT" relativeTo="$parentSave" relativePoint="RIGHT" x="8"/></Anchors>
-        <Scripts>
-          <OnClick> if CharacterMemory_OptionsClearSelected then CharacterMemory_OptionsClearSelected() end </OnClick>
-        </Scripts>
-      </Button>
-      <Button name="$parentOpenJournal" inherits="UIPanelButtonTemplate" text="Open Journal">
-        <Size x="140" y="24"/>
-        <Anchors><Anchor point="LEFT" relativeTo="$parentClearSelected" relativePoint="RIGHT" x="8"/></Anchors>
-        <Scripts>
-          <OnClick> if CharacterMemory_OpenJournal then CharacterMemory_OpenJournal() end </OnClick>
-        </Scripts>
-      </Button>
-      <Button name="$parentOpenSheet" inherits="UIPanelButtonTemplate" text="Open Character Sheet">
-        <Size x="180" y="24"/>
-        <Anchors><Anchor point="LEFT" relativeTo="$parentOpenJournal" relativePoint="RIGHT" x="8"/></Anchors>
-        <Scripts>
-          <OnClick> if CharacterMemory_OpenCharacterSheet then CharacterMemory_OpenCharacterSheet() end </OnClick>
-        </Scripts>
-      </Button>
-      <Button name="$parentPublish" inherits="UIPanelButtonTemplate" text="Publish to Group">
-        <Size x="160" y="24"/>
-        <Anchors><Anchor point="LEFT" relativeTo="$parentOpenSheet" relativePoint="RIGHT" x="8"/></Anchors>
-        <Scripts>
-          <OnClick> if CharacterMemory_OptionsPublish then CharacterMemory_OptionsPublish() end </OnClick>
-        </Scripts>
-      </Button>
-    </Frames>
-    <Scripts>
-      <OnShow> if CharacterMemory_OptionsOnShow then CharacterMemory_OptionsOnShow() end </OnShow>
-    </Scripts>
+    <Size x="600" y="520"/>
   </Frame>
-
-  <!-- Secondary Settings page: RP Bio editor -->
-  <!-- Bio content lives inside the Options panel as a tab -->
-  <Frame name="CM_BioPanel" parent="UIParent" hidden="true">
-    <Anchors>
-      <Anchor point="TOPLEFT"/>
-      <Anchor point="BOTTOMRIGHT"/>
-    </Anchors>
-    <Layers/>
-    <Frames>
-      <Frame name="$parentHeader" inherits="CMJ_CategoryHeaderPlain">
-        <Anchors>
-          <Anchor point="TOPLEFT" x="16" y="-8"/>
-          <Anchor point="TOPRIGHT" x="-16" y="-8"/>
-        </Anchors>
-        <Layers><Layer level="OVERLAY"><FontString parentKey="text" inherits="GameFontNormalLarge" text="RP Bio"/></Layer></Layers>
-      </Frame>
-      <!-- Identity on Bio page -->
-      <Frame name="$parentIdentityHeader" inherits="CMJ_CategoryHeaderPlain" hidden="true">
-        <Anchors>
-          <Anchor point="TOPLEFT" relativeTo="$parentHeader" relativePoint="BOTTOMLEFT" x="0" y="-12"/>
-          <Anchor point="RIGHT" x="-16"/>
-        </Anchors>
-        <Layers><Layer level="OVERLAY"><FontString parentKey="text" inherits="GameFontNormalLarge" text="RP Identity"/></Layer></Layers>
-      </Frame>
-      <EditBox name="$parentTitleEdit" inherits="CMJ_EditBoxTemplate"><Size y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentIdentityHeader" relativePoint="BOTTOMLEFT" x="16" y="-8"/><Anchor point="RIGHT" x="-16"/></Anchors></EditBox>
-      <Frame name="$parentTitleLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentTitleEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentTitleEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Title" justifyH="LEFT"/></Layer></Layers></Frame>
-      <EditBox name="$parentPronounsEdit" inherits="CMJ_EditBoxTemplate"><Size y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentTitleEdit" relativePoint="BOTTOMLEFT" x="0" y="-28"/><Anchor point="RIGHT" x="-16"/></Anchors></EditBox>
-      <Frame name="$parentPronounsLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentPronounsEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentPronounsEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Pronouns" justifyH="LEFT"/></Layer></Layers></Frame>
-      <EditBox name="$parentAlignmentEdit" inherits="CMJ_EditBoxTemplate"><Size y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentPronounsEdit" relativePoint="BOTTOMLEFT" x="0" y="-28"/><Anchor point="RIGHT" x="-16"/></Anchors></EditBox>
-      <Frame name="$parentAlignmentLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentAlignmentEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentAlignmentEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Alignment" justifyH="LEFT"/></Layer></Layers></Frame>
-      <EditBox name="$parentTagsEdit" inherits="CMJ_EditBoxTemplate"><Size y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentAlignmentEdit" relativePoint="BOTTOMLEFT" x="0" y="-28"/><Anchor point="RIGHT" x="-16"/></Anchors></EditBox>
-      <Frame name="$parentTagsLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentTagsEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentTagsEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Tags (comma separated)" justifyH="LEFT"/></Layer></Layers></Frame>
-
-      <!-- Appearance & Details on Bio page -->
-      <Frame name="$parentTraitsHeader" inherits="CMJ_CategoryHeaderPlain" hidden="true">
-        <Anchors><Anchor point="TOPLEFT" relativeTo="$parentTagsEdit" relativePoint="BOTTOMLEFT" x="0" y="-16"/><Anchor point="RIGHT"/></Anchors>
-        <Layers><Layer level="OVERLAY"><FontString parentKey="text" inherits="GameFontNormalLarge" text="Appearance &amp; Details"/></Layer></Layers>
-      </Frame>
-      <EditBox name="$parentAgeEdit" inherits="CMJ_EditBoxTemplate"><Size x="140" y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentTraitsHeader" relativePoint="BOTTOMLEFT" x="16" y="-16"/></Anchors></EditBox>
-      <Frame name="$parentAgeLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentAgeEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentAgeEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Age" justifyH="LEFT"/></Layer></Layers></Frame>
-      <EditBox name="$parentHeightEdit" inherits="CMJ_EditBoxTemplate"><Size x="140" y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentAgeEdit" relativePoint="TOPRIGHT" x="16" y="0"/></Anchors></EditBox>
-      <Frame name="$parentHeightLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentHeightEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentHeightEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Height" justifyH="LEFT"/></Layer></Layers></Frame>
-      <EditBox name="$parentWeightEdit" inherits="CMJ_EditBoxTemplate"><Size y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentHeightEdit" relativePoint="TOPRIGHT" x="16" y="0"/><Anchor point="RIGHT" x="-16"/></Anchors></EditBox>
-      <Frame name="$parentWeightLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentWeightEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentWeightEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Weight" justifyH="LEFT"/></Layer></Layers></Frame>
-      <EditBox name="$parentEyesEdit" inherits="CMJ_EditBoxTemplate"><Size x="140" y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentAgeEdit" relativePoint="BOTTOMLEFT" x="0" y="-24"/></Anchors></EditBox>
-      <Frame name="$parentEyesLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentEyesEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentEyesEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Eyes" justifyH="LEFT"/></Layer></Layers></Frame>
-      <EditBox name="$parentHairEdit" inherits="CMJ_EditBoxTemplate"><Size x="140" y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentEyesEdit" relativePoint="TOPRIGHT" x="16" y="0"/></Anchors></EditBox>
-      <Frame name="$parentHairLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentHairEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentHairEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Hair" justifyH="LEFT"/></Layer></Layers></Frame>
-      <EditBox name="$parentAliasEdit" inherits="CMJ_EditBoxTemplate"><Size y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentHairEdit" relativePoint="TOPRIGHT" x="16" y="0"/><Anchor point="RIGHT" x="-16"/></Anchors></EditBox>
-      <Frame name="$parentAliasLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentAliasEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentAliasEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Alias/Nickname" justifyH="LEFT"/></Layer></Layers></Frame>
-      <EditBox name="$parentLanguagesEdit" inherits="CMJ_EditBoxTemplate"><Size y="20"/><Anchors><Anchor point="TOPLEFT" relativeTo="$parentEyesEdit" relativePoint="BOTTOMLEFT" x="0" y="-24"/><Anchor point="RIGHT" x="-16"/></Anchors></EditBox>
-      <Frame name="$parentLanguagesLabel"><Size y="16"/><Anchors><Anchor point="BOTTOMLEFT" relativeTo="$parentLanguagesEdit" relativePoint="TOPLEFT" y="2"/><Anchor point="RIGHT" relativeTo="$parentLanguagesEdit" relativePoint="RIGHT"/></Anchors><Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontNormalSmall" text="Languages" justifyH="LEFT"/></Layer></Layers></Frame>
-      <Frame name="$parentBioHeader" inherits="CMJ_CategoryHeaderPlain" hidden="true">
-        <Anchors><Anchor point="TOPLEFT" relativeTo="$parentLanguagesEdit" relativePoint="BOTTOMLEFT" x="0" y="-16"/><Anchor point="RIGHT" x="-16"/></Anchors>
-        <Layers><Layer level="OVERLAY"><FontString parentKey="text" inherits="GameFontNormalLarge" text="Biography"/></Layer></Layers>
-      </Frame>
-      <Frame name="$parentBioBox">
-        <Anchors>
-          <Anchor point="TOPLEFT" relativeTo="$parentBioHeader" relativePoint="BOTTOMLEFT" x="16" y="-8"/>
-          <Anchor point="BOTTOMRIGHT" x="-24" y="56"/>
-        </Anchors>
-      </Frame>
-      <EditBox name="$parentBioEdit" multiLine="true" autoFocus="false" inherits="CMJ_EditBoxTemplate">
-        <Size y="300"/>
-        <Anchors>
-          <Anchor point="TOPLEFT" relativeTo="$parentBioBox" relativePoint="TOPLEFT" x="0" y="0"/>
-          <Anchor point="RIGHT" x="-16"/>
-        </Anchors>
-        <Scripts>
-          <OnTextChanged> if CharacterMemory_OptionsOnBioChanged then CharacterMemory_OptionsOnBioChanged(self) end </OnTextChanged>
-        </Scripts>
-      </EditBox>
-      <!-- Char count (reuse OptionsPanel counter name for shared Lua updater) -->
-      <Frame name="CM_OptionsPanelBioCount">
-        <Size y="16"/>
-        <Anchors><Anchor point="TOPRIGHT" relativeTo="$parentBioBox" relativePoint="TOPRIGHT" x="-8" y="-2"/></Anchors>
-        <Layers><Layer level="OVERLAY"><FontString parentKey="fs" inherits="GameFontDisableSmall" justifyH="RIGHT"/></Layer></Layers>
-      </Frame>
-      <Button name="$parentSave" inherits="UIPanelButtonTemplate" text="Save">
-        <Size x="120" y="24"/>
-        <Anchors><Anchor point="TOPLEFT" relativeTo="$parentBioBox" relativePoint="BOTTOMLEFT" x="0" y="8"/></Anchors>
-        <Scripts>
-          <OnClick> if CharacterMemory_OptionsSave then CharacterMemory_OptionsSave() end </OnClick>
-        </Scripts>
-      </Button>
-    </Frames>
-    <Scripts>
-      <OnShow> if CharacterMemory_OptionsOnShow then CharacterMemory_OptionsOnShow() end </OnShow>
-    </Scripts>
-  </Frame>
-
 </Ui>
-
-

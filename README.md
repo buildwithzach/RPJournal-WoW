@@ -1,74 +1,91 @@
-# Character Memory - WoW RP Addon
+# RP Journal for WoW Forever
 
-A World of Warcraft addon for roleplayers to track relationships with other players and NPCs, featuring a leveling system and journal functionality.
+Version **0.4.1**, targeting **Forever 1.60.1 / Interface 16001**. Remember the people you meet, keep the small details, and give your characters a reason to cross paths again.
 
-## Version: 0.0.5
+**PC gameplay testing is still pending.** This is an installable test build; offline checks cannot establish actual game rendering, protected API behavior, network delivery or SavedVariables disk writes.
 
-## Features
+## Use it by clicking
 
-- **Per-target memory journal** - Store first/last seen context and personal notes for players and NPCs
-- **Relationship leveling system** - XP-based progression with cooldowns and tiers
-- **Movable UI panel** - Shows key relationship info and progress bars
-- **Slash commands** - Easy access to notes, sharing, toggles, and manual XP adjustments
-- **Parchment-style UI** - Beautiful, immersive interface for roleplay
-- **Per-character persistence** - SavedVariables ensure your memories persist across sessions
+1. **Meet someone.** Target another player for two seconds. The quiet native prompt offers **Remember them**. Write one detail, optionally leave a **Next time…** promise, and keep the memory. A title is optional.
+2. **Find your history.** Select the person in your journal and click **Our story** on Overview. Its native menu leads to your unfinished and finished stories, memories, pinned pages, keepsakes, familiar places and search.
+3. **Read a whole story.** Choose a story and **Read chapters**. **Older / Newer** follows only that thread. A page that finishes one promise and begins another belongs to both stories. Chapter counts show your position.
+4. **Make it personal.** Under Notes, clicking a memory or story reads it; right-clicking opens page actions. **Keep a keepsake…** attaches a short description or one native item-link reference to a saved memory. The reader shows it with your words.
+5. **Meet again.** After at least 30 minutes away from that person, a reunion can recall your promise and its latest chapter. **Pick up story** opens the right continuation. Write what happened, explicitly tick **Finish** if you kept the promise, and optionally leave the next one.
 
-## Installation
+**Continue draft** resumes your unfinished words before opening a fresh page. **Later** keeps a draft; **Discard draft** asks for confirmation. **Edit memory / Edit story** edits the visible page. The core flow requires no slash commands.
 
-1. Download the latest release
-2. Extract the `CharacterMemory` folder to your `World of Warcraft/_retail_/Interface/AddOns/` directory
-3. Restart World of Warcraft or reload your UI (`/reload`)
+## A history you can return to — 0.4.0
 
-## Usage
+- **Connected chapters:** browse the beginning, intermediate reunions and ending of one thread without unrelated memories interrupting it. Removing a chapter leaves the other retained pages readable. If the latest and original pages are gone, the latest remaining chapter supplies the recollection.
+- **One native menu:** the existing Our story control provides unfinished/finished threads, all memories, pinned pages, keepsakes and places. Long lists page through all retained entries. Hover hints explain page actions.
+- **Find your own words:** search this person's memory/story titles, full notes, recorded places and keepsake labels. Queries are literal; basic Latin case is ignored, and other UTF-8 text is matched as entered. Search results lead to the exact page.
+- **Private keepsakes:** a ribbon, a pressed flower, a meaningful item reference—your description, attached deliberately. An item link is a reference, never an inventory item created by the addon. One keepsake per memory; change or remove it through page actions.
+- **A copy you control:** **Copy this memory…** opens an editable native preview of that single saved page, its date/place and keepsake label. Use your normal copy shortcut and decide where it goes. Editing the preview never edits the journal. No message is sent by this feature.
+- **Context stays attached:** continuing an open thread follows that thread; writing from a finished story does not silently attach the new page to an unrelated open promise. Pin/keepsake/thread changes refresh the visible reader.
 
-### Slash Commands
-- `/cm` or `/rpmemory` - Toggle the main journal interface
-- `/cm target` - Show/hide the target panel
-- `/cm note [text]` - Add a note about your current target
-- `/cm share` - Share relationship info with your target
-- `/cm xp [amount]` - Manually adjust XP for current target
+The main journal Lua/XML, original artwork, fonts, class colors, tabs, achievement arrangement and layout remain unchanged from the locked 0.2.4 presentation. Existing memory/reunion controls retain their widget, font, color and geometry declarations. The new menus, keepsake/search popups and copy dialog use native Blizzard controls; no themes or appearance setup are added. The admin/settings cleanup remains in place.
 
-### Features
-- **Automatic tracking**: The addon automatically records when you first meet someone and updates your last encounter
-- **Zone context**: Records where you met and last saw each person
-- **Relationship levels**: Build relationships through interactions and gain XP
-- **Journal entries**: Add personal notes and memories about each person
+## Meeting, memory, reunion
 
-## Development
+Prompts never take keyboard focus. They disappear on target changes, time out after 18 seconds, stay quiet in combat, and are spaced at least 30 seconds apart globally and 30 minutes per person. A first-meeting prompt interrupted before its dwell can wait for your next look; deliberately passing it does not nag you again. The existing targeting preference controls automatic prompts, while the journal remains available manually.
 
-This addon is built for WoW Retail (Interface version 110100) and requires no external libraries.
+Absence is measured from leaving the target, so holding one target does not create a reunion. A reunion and its draft keep that encounter's time, place and thread even if another plan is added later. No chat transcripts are recorded and no memories are automatically authored. The player supplies the meaning.
 
-### Project Structure
+## Your journal and public profile
+
+Memories, keepsakes, stories, drafts and private notes stay local to your character. Public-profile sharing is separate, explicitly enabled on your character sheet, and projects only the bounded public fields. Private notes, backstory, contact details, limits, memories, stories and drafts are excluded. Both peers need a compatible RP Journal version. Shared/coauthored chapters are not included in this release.
+
+Limits per person are **100 memories, 12 pending suggestions and 32 story threads**. Saved pages are never automatically evicted. Existing notes remain in place and are copied into a pinned Earlier notes memory once. Existing 0.3.0 chapter links work without a destructive migration. SavedVariables remain per character.
+
+## Character sheet and settings
+
+**Settings** has immediate-saving preferences and links to **My character** and the journal. **My character** has Identity, Appearance, Story, Personality, Skills, Relationships, Preferences and Notes sections. Switching pages or reopening retains unsaved edits during the session; **Save** persists them across reload/logout. Blank choices remain unspecified. An oversized public short bio is rejected before any sheet data is saved. Preferences cannot rewrite your authored bio.
+
+## Install and test
+
+Extract the ZIP and put **CharacterMemory** in your Forever client's **Interface/AddOns** directory. The manifest must be `Interface/AddOns/CharacterMemory/CharacterMemory.toc`. Back up your previous addon and per-character SavedVariables before upgrading.
+
+See [INSTALL-FOREVER.txt](INSTALL-FOREVER.txt) for the PC checklist, error reporting and rollback. The new features particularly need real-client checks for native popup focus, menu placement, item-link editing, copying and longer story trails at your normal resolution.
+
+Native Key Bindings include **Open your journal** and **Remember the current target** under **RP Journal**. The addon-compartment entry also opens the journal. Alt-drag moves it.
+
+## Optional command shortcuts
+
+| Command | Action |
+| --- | --- |
+| `/cm journal`, `/cmjournal` | Toggle the journal |
+| `/rpbio` | Open your character sheet |
+| `/cm remember <text>` | Keep a private memory for the current target |
+| `/cm recall [older\|newer\|first\|latest]` | Read/browse memories |
+| `/cm continue` | Continue a selected or latest open thread |
+| `/cm story <title>` | Start a private thread |
+| `/cm status` | Show addon/client versions |
+| `/cm help` | List the remaining compatibility commands |
+
+While the journal is open, recall/continue follow its selected person; otherwise they use the current player target. The original explicit `/cm share` action still posts an encounter summary when invoked; the new copy preview does not invoke it.
+
+## Release boundary
+
+Only client version **1.60.1 with Interface 16001** is accepted. Other versions
+(including unknown builds and future patches) stop before Lua modules register
+hooks, timers, network handlers or migrate journal data. The existing project
+specification supplies this target; an interface number alone does not authenticate
+a game distribution. Client identity and real gameplay still need confirmation.
+
+Release archives include a SHA-256 sidecar and use deterministic timestamps and
+permissions. Publish as a prerelease until the checklist in INSTALL-FOREVER.txt has
+passed on the intended client. CurseForge uploads require the author's project ID,
+an API token and a matching Forever game-version entry; do not label this as Retail
+or Classic just to make an upload succeed.
+
+## Development and verification
+
+The addon needs no runtime libraries or external services.
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r tests/requirements.txt
+.venv/bin/python scripts/check.py
 ```
-CharacterMemory/
-├── CharacterMemory.lua      # Main addon logic
-├── CharacterMemory.toc      # Addon manifest
-├── CharacterMemory.xml      # UI definitions
-├── CM_Achievements.lua      # Achievement system
-├── CM_Journal.lua          # Journal functionality
-├── RPBio.lua              # Character bio system
-├── RPBio.xml              # Bio UI definitions
-├── Art/                   # TGA texture assets
-└── media/                 # PNG texture assets
-```
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly in-game
-5. Submit a pull request
-
-## License
-
-This project is open source. Please respect the WoW addon development community guidelines.
-
-## Support
-
-For issues, feature requests, or questions, please open an issue on GitHub.
-
----
-
-**Note**: This addon is currently in early development (v0.0.5). Features may change and bugs may exist. Please report any issues you encounter.
-
+The tests load actual TOC files, Lua 5.1 and FrameXML scripts against a synthetic API boundary. Presentation fixtures compare the protected journal/dialog declarations with immutable historical ZIPs, plus byte hashes for the main journal and admin files (excluding the exact client-guard prefix). Original art and compatible TGA pixels are checked separately. Source-layout renders approximate native skins and fonts; they are not game screenshots.

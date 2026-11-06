@@ -1,19 +1,33 @@
-## Interface: 110100
+## Interface: 16001
 ## Title: RPJournal
-## Notes: RP relationship journal with parchment UI. Left list + right details, notes, achievements.
+## Notes: WoW Forever roleplay journal. People, living memories, unfinished stories and public character sheets.
 ## Author: detox1hp
-## Version: 0.0.5a
+## Version: 0.4.1
 ## SavedVariablesPerCharacter: CharacterMemoryDB, RPJournalDB
-## IconTexture: Interface\AddOns\CharacterMemory\media\CMcompact.png
+## IconTexture: Interface\AddOns\CharacterMemory\media\CMcompact.tga
+## AddonCompartmentFunc: CharacterMemory_OpenJournal
 ## X-Category: Roleplay
-## X-Website: https://github.com/zerovalueinc/RPJournal-WoW
+## X-Curse-Project-ID: 1324293
+## X-Website: https://github.com/buildwithzach/RPJournal-WoW
 
+CM_Compat.lua
+CM_Forms.lua
+CM_Chronicle.lua
+CM_Profile.lua
+CM_Protocol.lua
 CharacterMemory.lua
 CM_Achievements.lua
 CM_Journal.lua
 CharacterMemory.xml
 RPBio.xml
+RPBio_Layout.lua
+CM_Settings.lua
 RPBio.lua
+CM_ChronicleUI.lua
+CM_Journey.lua
+CM_Storybook.lua
+CM_Tooltips.lua
+CM_Bindings.lua
 
 # Do not list image assets here; textures are loaded by path at runtime.
 

@@ -1,0 +1,8 @@
+<Bindings>
+  <Binding name="RPJOURNAL_TOGGLE" header="RPJOURNAL">
+    CharacterMemory_OpenJournal()
+  </Binding>
+  <Binding name="RPJOURNAL_REMEMBER">
+    CharacterMemory_RememberTarget()
+  </Binding>
+</Bindings>

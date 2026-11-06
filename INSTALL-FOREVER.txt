@@ -1,0 +1,131 @@
+RP JOURNAL 0.4.1 — WOW FOREVER TEST BUILD
+
+Target: Forever 1.60.1 / Interface 16001. No external addon libraries required.
+This build passed offline Lua/FrameXML-script tests. In-game validation is pending.
+
+INSTALL ON YOUR PC
+1. Exit the game. Back up your old CharacterMemory addon folder and your character's
+   WTF/Account/<account>/<realm>/<character>/SavedVariables/CharacterMemory.lua
+   (and CharacterMemory.lua.bak, if present). Those files contain your journal.
+2. Find the Interface/AddOns folder inside the Forever client you actually launch.
+   Replace the existing CharacterMemory addon folder with the one in this ZIP.
+   Do not rename it or nest it inside another CharacterMemory folder.
+3. Confirm the path ends with Interface/AddOns/CharacterMemory/CharacterMemory.toc.
+4. Start Forever, enable RPJournal in AddOns, and log in.
+5. Optional: /cm status reports addon version 0.4.1 and Interface 16001.
+   If the interface differs, report the result before relying on compatibility.
+
+CHECK THE UI POLISH FIRST
+- Open addon Settings / RP Journal. It should show a compact preferences page;
+  changes save immediately. My character opens the only profile editor.
+- /rpbio opens My character. Use its left-side sections. Check paired fields,
+  multiline text, scrolling, the footer, and the single top-right close control.
+- Switch sections and close/reopen without saving: your in-session edits stay.
+  Press Save before /reload or logout. Unsaved sheet input is not a saved draft.
+- Write a bio, Save it, then change preferences: your bio must stay unchanged.
+- The journal uses the original pre-polish fonts, class colors, alignment and
+  achievement layout. Compare with 0.1.0; only the admin/character editor is polished.
+- Share posts only the brief encounter summary. Notes and memories stay private.
+- The character editor fits the viewport. The journal retains its original sizing.
+
+USE THE STORY FLOW BY CLICKING
+- Open the journal normally. Click a pending moment to write it; click a kept
+  memory or story to read it. No recall/continue command is needed.
+- In the reader, Older / Newer browse memories; Previous / Next browse stories.
+  The counter shows your page. Close returns to the journal.
+- Continue story writes the next chapter of the promise on screen. Continue draft
+  resumes unfinished words. Edit memory / Edit story edits the page on screen.
+- On a reunion, click Our story, then Continue story. Write what happened and
+  optionally tick Finish. Confirm that only the displayed thread closes.
+- A first-meeting prompt missed before its two-second dwell can wait for the next
+  look. Cooldowns, combat suppression and no keyboard-focus stealing still apply.
+- Main journal fonts, class colors, tabs, achievement layout and page positions
+  stay unchanged. Only the existing reader has the new native navigation controls.
+
+TRY THE FIRST-MEETING LOOP
+- Target a player and keep the target for two seconds. A quiet native prompt may
+  offer Remember them. Not now keeps the moment in your journal without nagging.
+  The prompt does not open the journal or take keyboard focus.
+- Write one sentence. Title can stay blank: its heading comes from your words.
+  Empty generic memories are rejected; a custom title is also enough to keep one.
+  Optionally fill Next time... with a promise or plan. Keep the
+  memory to see it and the new thread together on your reading page.
+- Later keeps a private draft; reopen with the key binding or Our story / Keep a
+  memory to continue writing. Discard draft asks before removing unfinished words.
+- After 30 minutes away from that person, target them again. The reunion prompt
+  recalls the latest chapter of the active promise (or a pinned/newest memory
+  if no linked chapter exists). Pick up story continues it. Record
+  what happened, tick Finish for a completed promise, and optionally leave a new one.
+  The reader should show both the completed promise and your next plan.
+- Our story on Overview opens the reader without waiting. Pin a meaningful memory to keep it
+  prominent. Automatic prompts respect the existing target-display preference,
+  cancel on target changes/combat, and time out after 18 seconds. Pending moments
+  stay in Notes / Memories even after a prompt disappears.
+
+TRY THE REST
+- /cm journal opens the original two-page journal. Target a player to meet them.
+- Search on the left; filter Favorites, Seen this week, or Unfinished stories.
+- Overview: favorite a person. Notes: keep normal notes, Memories, or Stories.
+- Memories: select a suggested moment, Keep it, add your own words, and Save.
+  You can also create, edit, pin, or remove a memory yourself.
+- Stories: create a hook or promise; Resolve it when finished, or Reopen it later.
+- /cm remember <text> and /cm story <title> work with your current player target.
+- In Key Bindings, RP Journal offers Open your journal and Remember current target.
+- Profile opens the selected person's public profile, or your own character sheet.
+  For your own sheet use /rpbio. Sharing is OFF until you enable Share public profile
+  and Save. Both players must use this build for the new RPJ2 profile exchange.
+- Personal notes, memories, stories, backstory, limits, and contact details are
+  excluded from the public-profile transport. Chat bodies are never recorded.
+- /cm share explicitly posts a short encounter summary to party, raid, or say.
+
+FIRST IN-GAME CHECK (ABOUT 10 MINUTES)
+1. Enable errors: /console scriptErrors 1, then /reload.
+2. Open /cm journal: check the parchment, list, tabs and native controls fit.
+   Test at your normal resolution and UI scale. Alt-drag moves the journal.
+3. Target two different players. Write distinct notes for each; change selections,
+   reopen the journal, then /reload. Confirm the notes and selection persist.
+4. Try the first-meeting loop above. Test Later and draft recovery with /reload.
+   Keep a suggested memory; create and edit another; pin it. Remove a page, testing
+   both Cancel and Remove. Create a story, Resolve it and Reopen it.
+5. Search/filter the list. Check pagination with more than seven people.
+6. Save a short bio plus a PRIVATE test backstory/note. With a second tester on this
+   build, enable sharing and request the profile. Verify the short bio arrives and
+   private text does not. Repeat with sharing disabled. Wait 30 seconds between requests.
+7. Cancel a trade: no trade credit. Finish one: one credit. Enter combat with the
+   journal open; it should hide and return after combat. Hover a remembered player:
+   their open story and a pinned/latest recollection should appear in the tooltip outside combat.
+8. Type /cm status and take a screenshot. If an error appears, copy the FIRST full
+   error, the action that triggered it, and your build/version. Include a screenshot
+   if controls overlap or textures are missing. Send those back in this chat.
+
+LIMITS
+- 100 memories, 12 pending suggestions and 32 stories per person. Full journals keep
+  existing pages; remove a page before adding more. Suggestions cool down per kind.
+- Players are tracked; NPC journals are not implemented.
+- English emote keyword detection is retained from the original addon.
+- Non-LFG dungeon completion uses the existing recent-boss/instance-exit heuristic;
+  it is not proof the final boss was defeated. Some activities may lack client events.
+- The new profile transport does not exchange profiles with old CM1 builds.
+- No themes or appearance setup. Original journal design retained; additions use
+  Blizzard buttons, fonts, inputs and dialogs.
+
+ROLL BACK
+Exit the client, restore BOTH your old addon folder and backed-up SavedVariables.
+Restoring only the addon does not reverse a SavedVariables migration.
+
+0.4.0 STORYBOOK TESTS — NO NEW COMMANDS
+- Overview > Our story opens the native menu. Find unfinished and finished
+  stories; choose one, then Read chapters. Older/Newer must stay inside that
+  thread, including a page that finishes one promise and begins another.
+- Under Notes / Memories, left-click still reads. Right-click a saved memory
+  for page actions. Keep a keepsake: try a short description and a native item
+  link. It should appear in the reader and survive a normal logout/reload.
+  Remove/change it; the visible reader should update.
+- Use Our story > Familiar places, Pinned memories, Memories with keepsakes,
+  and Find a memory or story. Search a word in a full memory note. Choose the
+  result and confirm it opens the correct person's exact page.
+- Copy this memory opens a separate editable preview. Copy it using your usual
+  shortcut. Confirm no chat message is sent, other pages/private notes/drafts
+  are absent, and editing/closing the preview leaves the journal unchanged.
+- Verify native menu placement, popup focus, copying and item-link paste at
+  your usual screen resolution. These need the actual Forever client.

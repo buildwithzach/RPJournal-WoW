@@ -9,3 +9,12 @@ Desktop.ini
 *.log
 
 
+
+# Generated release bundles and Python caches
+dist/
+__pycache__/
+
+.venv/
+.DS_Store
+.env
+.env.*
