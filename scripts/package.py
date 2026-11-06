@@ -20,7 +20,7 @@ for path in paths:
     if path.suffix in {'.lua', '.xml', '.toc'}:
         source = path.read_text().replace(chr(92), '/')
         for ref in re.findall(r'Interface/AddOns/CharacterMemory/([A-Za-z0-9_./-]+\.(?:png|tga|blp))', source):
-            assert ref in textures, f'Runtime texture omitted: {ref}' 
+            assert ref in textures, f'Runtime texture omitted: {ref}'
 paths += [ROOT/name for name in ['INSTALL-FOREVER.txt','README.md','CHANGELOG.md']]
 with ZipFile(out, 'w', ZIP_DEFLATED, compresslevel=9) as bundle:
     for path in paths:

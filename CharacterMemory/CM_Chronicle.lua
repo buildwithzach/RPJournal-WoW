@@ -92,7 +92,7 @@ function M.Remember(guid, candidateID, note, title, where, moment)
     for i, item in ipairs(e.memoryCandidates) do if item.id == candidateID then candidate, index = item, i; break end end
     if not candidate then return nil, "That moment is no longer waiting to be remembered." end
   elseif text(note):match("^%s*$") and text(title, 120):match("^%s*$") then
-    return nil, "Give this memory a title or a few words." 
+    return nil, "Give this memory a title or a few words."
   end
   local context = candidate or M.Moment(moment)
   if context and context.id then
