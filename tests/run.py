@@ -871,6 +871,167 @@ class RestoredStyleTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(presentation_source(ADDON/name).encode()).hexdigest(),expected,name)
 
 
+class ExperienceTests(unittest.TestCase):
+    def setUp(self):
+        self.c=Client(); self.g=self.c.g
+
+    def open_achievements(self):
+        e=self.c.target(); self.g.CMJ.Toggle()
+        self.c.click(self.g.CMJ_RootXMLPageRTabBarTabAchievements)
+        return e
+
+    def test_legacy_meeting_chatter_is_reset_once_and_can_be_opted_into(self):
+        c=Client({'settings':{'shareEnabled':True},'entries':{}})
+        self.assertFalse(c.g.CharacterMemoryDB.settings.shareEnabled)
+        c.target();self.assertEqual(len(c.g.MOCK.chat),0)
+        c.g.CharacterMemoryDB.settings.shareEnabled=True
+        restored=Client(plain(c.g.CharacterMemoryDB))
+        self.assertTrue(restored.g.CharacterMemoryDB.settings.shareEnabled)
+
+    def test_normal_startup_progress_and_claims_do_not_write_chat(self):
+        self.assertEqual(len(self.g.MOCK.chat),0)
+        e=self.open_achievements()
+        for _ in range(10): self.g.CharacterMemory_AwardXP(e.guid,100,'test')
+        self.c.click(self.g.CMJ.refs.achRows[1].claim)
+        self.assertEqual(len(self.g.MOCK.chat),0)
+        self.assertIn('claimed',self.g.CMExperience.hint.GetText(self.g.CMExperience.hint))
+        self.assertEqual(self.g.CMJ.refs.achRows[1].claim.GetText(self.g.CMJ.refs.achRows[1].claim),'Claimed')
+
+    def test_switching_people_cannot_claim_for_previous_person(self):
+        first=self.open_achievements(); old_click=self.g.CMJ.refs.achRows[1].claim.GetScript(self.g.CMJ.refs.achRows[1].claim,'OnClick')
+        second=self.c.entry('Player-1-SECOND');second.name='Second'
+        self.g.CMUI.Select(second.guid)
+        self.assertFalse(self.g.CMJ.refs.achRows[1].claim.IsEnabled(self.g.CMJ.refs.achRows[1].claim))
+        old_click()
+        self.assertIsNone(first.ach.claimed.first_meet)
+        self.assertIn('Second',self.g.CMExperience.title.GetText(self.g.CMExperience.title))
+
+    def test_all_twelve_achievements_are_accessible_and_fit_page(self):
+        self.open_achievements(); names=[]; geo=Geometry(self.c)
+        for page in range(3):
+            for row in self.g.CMJ.refs.achRows.values():
+                if row.shown:
+                    names.append(row.title.GetText(row.title))
+                    self.assertTrue(geo.contains(self.g.CMJ.refs.achievements,row))
+            if page<2:self.c.click(self.g.CMExperience.next)
+        self.assertEqual(len(set(names)),12)
+        self.assertFalse(self.g.CMExperience.next.IsEnabled(self.g.CMExperience.next))
+        self.assertTrue(geo.contains(self.g.CMJ.refs.achievements,self.g.CMExperience.next))
+        self.c.click(self.g.CMExperience.previous)
+        self.assertEqual(self.g.CMExperience.page,2)
+
+    def test_empty_and_filtered_journal_give_guidance(self):
+        self.g.CMJ.Toggle();self.c.click(self.g.CMJ_RootXMLPageRTabBarTabAchievements)
+        self.assertTrue(self.g.CMExperience.empty.shown)
+        self.assertIn('Target another player',self.g.CMExperience.empty.GetText(self.g.CMExperience.empty))
+        self.c.target();self.g.CMUI.Select('Player-1-ELARA')
+        self.assertFalse(self.g.CMExperience.empty.shown)
+        self.g.CMJ.refs.search.SetText(self.g.CMJ.refs.search,'no such person')
+        self.assertTrue(self.g.CMExperience.empty.shown)
+        self.assertFalse(any(r.shown for r in self.g.CMJ.refs.achRows.values()))
+
+    def test_emote_completion_refreshes_visible_progress_and_rank_immediately(self):
+        e=self.open_achievements();self.g.CharacterMemory_AwardXP(e.guid,400,'test')
+        self.c.emit('CHAT_MSG_TEXT_EMOTE','Elara kisses you.','Elara-FictionalRealm')
+        self.c.emit('CHAT_MSG_TEXT_EMOTE','Elara loves you.','Elara-FictionalRealm')
+        self.assertTrue(e.relationshipUnlocked)
+        self.assertEqual(self.g.CharacterMemory_GetAchievementSummary(e.guid).done,3)
+        self.assertTrue(self.g.CMJ.refs.achRows[3].claim.IsEnabled(self.g.CMJ.refs.achRows[3].claim))
+        self.assertEqual(len(self.g.MOCK.chat),0)
+
+    def test_claim_is_once_only_and_persists_after_reload(self):
+        e=self.open_achievements();xp=e.xp
+        self.assertTrue(self.g.CharacterMemory_ClaimAchievement(e.guid,'first_meet'))
+        self.assertIsNone(self.g.CharacterMemory_ClaimAchievement(e.guid,'first_meet'))
+        self.assertEqual(e.xp,xp+50)
+        restored=Client(plain(self.g.CharacterMemoryDB))
+        self.assertFalse(restored.g.CharacterMemory_GetAchievements(e.guid)[1].claimable)
+        self.assertEqual(restored.g.CharacterMemoryDB.entries[e.guid].xp,xp+50)
+
+    def test_lifetime_emote_milestones_survive_weekly_history_pruning(self):
+        e=self.open_achievements();self.g.CM_LogEmoteForAchievements(e.guid,'kiss')
+        self.g.MOCK.epoch += 8*86400
+        self.assertTrue(self.g.CharacterMemory_GetAchievements(e.guid)[2].done)
+        self.g.CharacterMemory_ClaimAchievement(e.guid,'first_kiss')
+        self.assertTrue(self.g.CharacterMemory_GetAchievements(e.guid)[2].done)
+
+    def test_weekly_emotes_are_bounded_and_repeatable(self):
+        e=self.open_achievements()
+        for _ in range(1000):self.g.CM_LogEmoteForAchievements(e.guid,'hug')
+        self.assertEqual(len(e.ach.history.emotes.hug),10)
+        self.assertTrue(self.g.CharacterMemory_ClaimAchievement(e.guid,'hug_weekly_10'))
+        self.assertFalse(self.g.CharacterMemory_GetAchievements(e.guid)[4].claimable)
+        self.g.MOCK.epoch += 8*86400
+        self.assertFalse(self.g.CharacterMemory_GetAchievements(e.guid)[4].done)
+        for _ in range(10):self.g.CM_LogEmoteForAchievements(e.guid,'hug')
+        self.assertTrue(self.g.CharacterMemory_ClaimAchievement(e.guid,'hug_weekly_10'))
+
+    def test_status_uses_loaded_addon_metadata(self):
+        self.g.C_AddOns=self.c.table({'GetAddOnMetadata':self.g.loadstring('return function() return "9.8.7" end')()})
+        self.g.SlashCmdList.CHARACTERMEMORY('status')
+        self.assertIn('9.8.7',self.g.MOCK.chat[1].text)
+
+    def test_delete_command_requires_confirmation_and_hide_closes_journal(self):
+        e=self.open_achievements();self.g.SlashCmdList.CHARACTERMEMORY('delete')
+        self.assertIsNotNone(self.g.CharacterMemoryDB.entries[e.guid])
+        self.g.MOCK.AcceptPopup()
+        self.assertIsNone(self.g.CharacterMemoryDB.entries[e.guid])
+        self.g.SlashCmdList.CHARACTERMEMORY('hide')
+        self.assertFalse(self.g.CMJ.refs.root.shown)
+
+    def test_public_summary_requires_preview_and_never_sends_private_writing(self):
+        e=self.open_achievements();e.notes='PRIVATE NOTE'
+        self.g.CharacterMemory_Share(e.guid)
+        self.assertEqual(len(self.g.MOCK.chat),0)
+        self.g.MOCK.AcceptPopup()
+        self.assertEqual(len(self.g.MOCK.chat),1)
+        self.assertEqual(self.g.MOCK.chat[1].channel,'SAY')
+        self.assertNotIn('PRIVATE',self.g.MOCK.chat[1].text)
+
+    def test_summary_is_not_posted_to_a_changed_channel(self):
+        e=self.open_achievements();self.g.CharacterMemory_Share(e.guid)
+        self.g.MOCK.grouped=True;self.g.MOCK.AcceptPopup()
+        self.assertEqual(len(self.g.MOCK.chat),0)
+
+    def test_inspection_reads_current_target_and_rejects_stale_responses(self):
+        e=self.c.target()
+        self.c.lua.execute('C_PaperDollInfo={GetInspectItemLevel=function(unit) assert(unit=="target"); return 42 end}')
+        self.c.emit('INSPECT_READY',e.guid);self.assertEqual(e.itemLevel,42)
+        other=self.c.entry('Player-1-OLD')
+        self.c.emit('INSPECT_READY',other.guid);self.assertIsNone(other.itemLevel)
+
+    def test_plain_cm_opens_journal_and_explicit_help_is_available(self):
+        self.g.SlashCmdList.CHARACTERMEMORY('')
+        self.assertTrue(self.g.CMJ.refs.root.shown)
+        self.assertEqual(len(self.g.MOCK.chat),0)
+        self.g.SlashCmdList.CHARACTERMEMORY('help')
+        self.assertGreater(len(self.g.MOCK.chat),0)
+
+    def test_activity_events_reach_the_catalogue_goals(self):
+        e=self.c.target();g=self.g;c=self.c
+        g.MOCK.grouped=True;g.MOCK.units.party1=g.MOCK.units.target
+        for _ in range(3):c.emit('DUEL_FINISHED')
+        for _ in range(10):
+            c.emit('CHAT_MSG_WHISPER','not retained','Elara-FictionalRealm');c.advance(61)
+        g.MOCK.resting=True;c.lua.execute('CheckInteractDistance=function() return true end');c.advance(1800)
+        g.MOCK.instance=True;g.MOCK.instanceType='raid';c.emit('ENCOUNTER_END',123,'Boss',1,5,1)
+        g.MOCK.instanceType='party';c.emit('LFG_COMPLETION_REWARD')
+        g.MOCK.instanceType='pvp'
+        for _ in range(5):c.emit('PVP_MATCH_COMPLETE')
+        g.MOCK.instanceType='arena'
+        for _ in range(3):c.emit('PVP_MATCH_COMPLETE')
+        for emote in ['kiss','love']+['hug']*10:g.CM_LogEmoteForAchievements(e.guid,emote)
+        achieved=list(g.CharacterMemory_GetAchievements(e.guid).values())
+        self.assertEqual(len(achieved),12)
+        self.assertTrue(all(a.done for a in achieved),[(a.id,a.cur) for a in achieved if not a.done])
+        self.assertNotIn('not retained',json.dumps(plain(g.CharacterMemoryDB)))
+
+    def test_invalid_manual_xp_cannot_corrupt_entry(self):
+        e=self.c.target();xp=e.xp
+        self.g.SlashCmdList.CHARACTERMEMORY('reladd 1e999')
+        self.assertEqual(e.xp,xp)
+
+
 class ReleaseBoundaryTests(unittest.TestCase):
     def test_unsupported_clients_preserve_data_and_do_not_start_modules(self):
         for version, interface in [('12.0.0', 120000), ('1.15.8', 11508),

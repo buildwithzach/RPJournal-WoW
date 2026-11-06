@@ -5,6 +5,23 @@ All notable changes to the Character Memory WoW addon will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-11-06
+
+Quiet gameplay and clearer achievement flows; Forever gameplay validation remains pending.
+
+- Replace achievement scrolling with five-row pages, Previous / Next, completion
+  counts, rank guidance, empty states, visible claim states and reward tooltips.
+- Fix stale achievement claims after selecting a different person and row overflow.
+- Refresh achievements and relationship ranks after the current stat/emote is recorded.
+- Preserve one-time emote milestones and bound weekly emote histories to ten timestamps.
+- Remove startup, rank-gate and reward chat spam; show claim feedback in the journal.
+  Reset legacy meeting reminders off once, preserving future explicit opt-in.
+- Preview public summaries and destinations before posting; cancel if the group changes.
+- Make bare /cm open the journal, implement /cm hide, confirm /cm delete, open sheets
+  from /cm profile, and read the installed version for /cm status.
+- Pass the target unit into equipment inspection and ignore stale inspection results.
+- Reject non-finite manual XP values. Add end-to-end regression coverage for these flows.
+
 ## [0.4.1] - 2026-11-06
 
 Release hardening prerelease; actual Forever-client validation remains pending.

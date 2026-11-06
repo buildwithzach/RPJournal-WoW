@@ -1,4 +1,4 @@
-RP JOURNAL 0.4.1 — WOW FOREVER TEST BUILD
+RP JOURNAL 0.4.2 — WOW FOREVER TEST BUILD
 
 Target: Forever 1.60.1 / Interface 16001. No external addon libraries required.
 This build passed offline Lua/FrameXML-script tests. In-game validation is pending.
@@ -12,7 +12,7 @@ INSTALL ON YOUR PC
    Do not rename it or nest it inside another CharacterMemory folder.
 3. Confirm the path ends with Interface/AddOns/CharacterMemory/CharacterMemory.toc.
 4. Start Forever, enable RPJournal in AddOns, and log in.
-5. Optional: /cm status reports addon version 0.4.1 and Interface 16001.
+5. Optional: /cm status reports addon version 0.4.2 and Interface 16001.
    If the interface differs, report the result before relying on compatibility.
 
 CHECK THE UI POLISH FIRST
@@ -25,7 +25,7 @@ CHECK THE UI POLISH FIRST
 - Write a bio, Save it, then change preferences: your bio must stay unchanged.
 - The journal uses the original pre-polish fonts, class colors, alignment and
   achievement layout. Compare with 0.1.0; only the admin/character editor is polished.
-- Share posts only the brief encounter summary. Notes and memories stay private.
+- Post… previews only the brief encounter summary; Post summary sends it. Notes and memories stay private.
 - The character editor fits the viewport. The journal retains its original sizing.
 
 USE THE STORY FLOW BY CLICKING
@@ -76,7 +76,7 @@ TRY THE REST
   and Save. Both players must use this build for the new RPJ2 profile exchange.
 - Personal notes, memories, stories, backstory, limits, and contact details are
   excluded from the public-profile transport. Chat bodies are never recorded.
-- /cm share explicitly posts a short encounter summary to party, raid, or say.
+- /cm share previews a short encounter summary; Post summary sends it to party, raid, or say.
 
 FIRST IN-GAME CHECK (ABOUT 10 MINUTES)
 1. Enable errors: /console scriptErrors 1, then /reload.
@@ -129,3 +129,13 @@ Restoring only the addon does not reverse a SavedVariables migration.
   are absent, and editing/closing the preview leaves the journal unchanged.
 - Verify native menu placement, popup focus, copying and item-link paste at
   your usual screen resolution. These need the actual Forever client.
+
+0.4.2 QUIET JOURNAL CHECK
+- /cm opens the journal without a chat help dump. Login, XP and claims stay quiet.
+- Select a person and click Achievements. All 12 goals are reachable using Next and
+  Previous. Claim one; it becomes Claimed and the reward appears inside the journal.
+- Change people with the tab open: rows and claim targets must change immediately.
+- Search for a nonexistent name: guidance replaces the previous person's goals.
+- Post… previews the summary and destination. Cancel sends nothing. Post summary
+  sends only the shown summary. Test with a consenting party; private notes stay local.
+- /cm status reports 0.4.2; /cm hide closes the journal; /cm delete asks first.

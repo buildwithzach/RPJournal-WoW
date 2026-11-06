@@ -1,8 +1,27 @@
 # RP Journal for WoW Forever
 
-Version **0.4.1**, targeting **Forever 1.60.1 / Interface 16001**. Remember the people you meet, keep the small details, and give your characters a reason to cross paths again.
+Version **0.4.2**, targeting **Forever 1.60.1 / Interface 16001**. Remember the people you meet, keep the small details, and give your characters a reason to cross paths again.
 
 **PC gameplay testing is still pending.** This is an installable test build; offline checks cannot establish actual game rendering, protected API behavior, network delivery or SavedVariables disk writes.
+
+## A quieter, clearer journal — 0.4.2
+
+- **Achievements belong to the selected person.** Five rows per page keep all 12
+  milestones accessible. Previous / Next, completed counts, Claim / Claimed / Locked
+  states, reward tooltips and a clear three-achievement rank requirement explain what
+  to do next. Empty searches and new journals show guidance.
+- **Progress stays in the journal.** Startup, rank-gate and achievement-claim chatter
+  is removed. Legacy first-meeting chat reminders are reset off once on upgrade;
+  they remain an explicit opt-in in Settings. `/cm help` and `/cm status` answer only
+  when requested. `/cm` opens the journal directly.
+- **Sharing has a preview.** Post… and `/cm share` show the encounter summary and
+  destination. Only Post summary sends it. Notes, memories, keepsakes and stories
+  remain private. Changing groups while the preview is open cancels the send.
+- **Earned milestones persist.** One-time emote achievements survive the weekly
+  history cleanup. Weekly hug progress stays bounded and can be earned again.
+- **Safer shortcuts.** `/cm hide` closes the journal; `/cm delete` asks before removal;
+  `/cm profile` opens the selected character sheet. `/cm status` reads the loaded
+  addon's version instead of a hard-coded string.
 
 ## Use it by clicking
 
@@ -23,7 +42,7 @@ Version **0.4.1**, targeting **Forever 1.60.1 / Interface 16001**. Remember the 
 - **A copy you control:** **Copy this memory…** opens an editable native preview of that single saved page, its date/place and keepsake label. Use your normal copy shortcut and decide where it goes. Editing the preview never edits the journal. No message is sent by this feature.
 - **Context stays attached:** continuing an open thread follows that thread; writing from a finished story does not silently attach the new page to an unrelated open promise. Pin/keepsake/thread changes refresh the visible reader.
 
-The main journal Lua/XML, original artwork, fonts, class colors, tabs, achievement arrangement and layout remain unchanged from the locked 0.2.4 presentation. Existing memory/reunion controls retain their widget, font, color and geometry declarations. The new menus, keepsake/search popups and copy dialog use native Blizzard controls; no themes or appearance setup are added. The admin/settings cleanup remains in place.
+The original journal Lua/XML, artwork, fonts, class colors and tabs remain in place. The 0.4.2 experience module adds a paginated achievement view using the existing native rows. Existing memory/reunion controls retain their widget, font, color and geometry declarations. The new menus, keepsake/search popups and copy dialog use native Blizzard controls; no themes or appearance setup are added. The admin/settings cleanup remains in place.
 
 ## Meeting, memory, reunion
 
@@ -62,7 +81,7 @@ Native Key Bindings include **Open your journal** and **Remember the current tar
 | `/cm status` | Show addon/client versions |
 | `/cm help` | List the remaining compatibility commands |
 
-While the journal is open, recall/continue follow its selected person; otherwise they use the current player target. The original explicit `/cm share` action still posts an encounter summary when invoked; the new copy preview does not invoke it.
+While the journal is open, recall/continue follow its selected person; otherwise they use the current player target. The explicit `/cm share` action previews an encounter summary and its destination before Post summary sends it; the new copy preview does not invoke it.
 
 ## Release boundary
 

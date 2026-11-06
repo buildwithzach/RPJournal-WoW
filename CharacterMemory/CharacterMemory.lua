@@ -105,7 +105,10 @@ local function initializeDatabase()
   }
   -- ensure new defaults exist
   if CharacterMemoryDB.settings.showOnTarget == nil then CharacterMemoryDB.settings.showOnTarget = true end
-  if CharacterMemoryDB.settings.shareEnabled == nil then CharacterMemoryDB.settings.shareEnabled = false end
+  if not CharacterMemoryDB.settings.quietJournalDefaults then
+    CharacterMemoryDB.settings.shareEnabled = false
+    CharacterMemoryDB.settings.quietJournalDefaults = true
+  end
   CharacterMemoryDB.settings.anchor = CharacterMemoryDB.settings.anchor or { point = "CENTER", x = 0, y = 200 }
   if CharacterMemoryDB.settings.useSheetOnTarget == nil then CharacterMemoryDB.settings.useSheetOnTarget = true end
   CharacterMemoryDB.settings.minimap = CharacterMemoryDB.settings.minimap or { enabled = true, angle = 210 }
@@ -487,14 +490,14 @@ function CharacterMemory_RequestTargetItemLevel()
 end
 
 function CharacterMemory_OnInspectReady(inspectedGuid)
-  if not inspectedGuid then return end
+  if not inspectedGuid or inspectedGuid ~= UnitGUID("target") then return end
   local e = getOrCreateEntry(inspectedGuid)
   if not e then return end
   -- Some builds expose GetInspectItemLevel or C_PaperDollInfo.GetInspectItemLevel
   local ilvl = nil
   if _G.C_PaperDollInfo and _G.C_PaperDollInfo.GetInspectItemLevel then
-    local ok, v = pcall(_G.C_PaperDollInfo.GetInspectItemLevel)
-    if ok and type(v) == "number" and v > 0 then ilvl = v end
+    local ok, v = pcall(_G.C_PaperDollInfo.GetInspectItemLevel, "target")
+    if ok and not CMCompat.IsSecret(v) and type(v) == "number" and v > 0 then ilvl = v end
   end
   if not ilvl and _G.GetAverageItemLevel then
     -- Fallback: GetAverageItemLevel returns your own; not for inspected targets
@@ -667,6 +670,8 @@ function refreshRelationship(entry)
   entry.tier = computeTierFromLevel(entry.level)
 end
 
+CharacterMemory_RefreshRelationship = refreshRelationship
+
 local function ensureStats(entry)
   entry.stats = entry.stats or {}
   local s = entry.stats
@@ -694,56 +699,17 @@ local function incStat(guid, key, amount)
   if not e then return end
   local s = ensureStats(e)
   s[key] = (s[key] or 0) + (amount or 1)
+  refreshRelationship(e)
+  if CMJ and CMJ.NotifyDataChanged then CMJ.NotifyDataChanged() end
 end
 
-local function toastXP(entry, amount, reason)
-  if not entry or not entry.isPlayer then return end
-  -- Only notify on level-ups (rank ups), not every XP award. Detect a level change
-  -- by comparing computed level from XP before and after inside awardXP.
-  if entry._justRankedUp then
-    local message = string_format("%s: Rank up! Lv %d (%s)", shortName(entry.name), entry.level, entry.tier)
-    printMessage(message)
-    entry._justRankedUp = nil
-  end
-end
-
+-- Relationship progress belongs in the journal, not repeated chat notifications.
 function awardXP(guid, amount, reason)
   local entry = getOrCreateEntry(guid)
-  if not entry or not amount or amount <= 0 then return end
-  local beforeLevel = entry.level or computeLevelFromXP(entry.xp or 0)
+  if not entry or type(amount) ~= "number" or amount ~= amount or amount == math.huge or amount <= 0 then return end
   entry.xp = (entry.xp or 0) + amount
-  
-  -- Compute what the level would be without the achievement requirement
-  local computedLevel = computeLevelFromXP(entry.xp)
-  local wouldHaveRankedUp = computedLevel > beforeLevel
-  
   refreshRelationship(entry)
-  local afterLevel = entry.level
-  
-  -- Check if they were blocked by achievement requirement
-  local wasBlocked = false
-  if wouldHaveRankedUp and afterLevel == beforeLevel then
-    -- They would have ranked up but didn't - check if it's due to achievement requirement
-    local achievementSummary = _G.CharacterMemory_GetAchievementSummary and _G.CharacterMemory_GetAchievementSummary(guid)
-    local completedAchievements = achievementSummary and achievementSummary.done or 0
-    
-    if completedAchievements < 3 then
-      wasBlocked = true
-      -- Show a helpful message about the requirement
-      local message = string_format("%s: Need 3 achievements to rank up! (%d/3 completed)", 
-        shortName(entry.name), completedAchievements)
-      printMessage(message)
-    end
-  end
-  
-  if wouldHaveRankedUp and not wasBlocked then
-    entry._justRankedUp = true
-  end
-  
-  -- update UI if this is the active target
-  if State.currentGUID == guid then CharacterMemory_UpdateUI() end
   if _G.CMJ and _G.CMJ.NotifyDataChanged then _G.CMJ.NotifyDataChanged() end
-  toastXP(entry, amount, reason)
 end
 
 -- Make awardXP available for slash manual award
@@ -784,23 +750,26 @@ end
 -- Event handling and business logic
 -- -----------------------------------------------------------------------------
 
-local function shareToGroupOrSay(text)
-  if IsInRaid() then
-    return CMCompat.SendChat(text, "RAID")
-  elseif IsInGroup() then
-    return CMCompat.SendChat(text, "PARTY")
-  else
-    return CMCompat.SendChat(text, "SAY")
-  end
+local function shareChannel()
+  return IsInRaid() and "RAID" or IsInGroup() and "PARTY" or "SAY"
 end
 
+StaticPopupDialogs["CMJ_SHARE_SUMMARY"] = {
+  text = "Post this encounter summary to %s?\n\n%s\n\nPrivate notes, memories and stories are not included.",
+  button1 = "Post summary", button2 = "Cancel", timeout = 0, whileDead = true, hideOnEscape = true,
+  OnAccept = function(_, data)
+    if data and data.channel == shareChannel() and CharacterMemoryDB.entries[data.guid] then
+      CMCompat.SendChat(data.message, data.channel)
+    end
+  end,
+}
 function CharacterMemory_Share(guid)
   guid = guid or State.currentGUID
-  if not guid then return end
-  local e = CharacterMemoryDB.entries[guid]
+  local e = guid and CharacterMemoryDB.entries[guid]
   if not e then return end
-  local msg = string.format("%s — First met %s in %s. Lv %d (%s), %d XP.", shortName(e.name), e.firstMetAt or "—", e.firstMetWhere or "—", e.level or 0, e.tier or "Stranger", e.xp or 0)
-  shareToGroupOrSay(msg)
+  local msg = CMCompat.Text(string.format("%s — First met %s in %s. Lv %d (%s), %d XP.", shortName(e.name), e.firstMetAt or "—", e.firstMetWhere or "—", e.level or 0, e.tier or "Stranger", e.xp or 0), 250):gsub("|", "")
+  local channel = shareChannel()
+  StaticPopup_Show("CMJ_SHARE_SUMMARY", channel, msg, {guid = guid, channel = channel, message = msg})
 end
 
 local function isCurrentTargetGroupmate()
@@ -1068,7 +1037,7 @@ local function handleTextEmote(event, text, playerName)
     -- Track per-emote history for achievements regardless of cooldown
     local tl = matched and matched:lower() or ""
     if tl == "hug" or tl == "kiss" or tl == "love" then
-      if _G.CM_LogEmoteForAchievements then pcall(_G.CM_LogEmoteForAchievements, State.currentGUID, tl) end
+      if _G.CM_LogEmoteForAchievements then _G.CM_LogEmoteForAchievements(State.currentGUID, tl) end
     end
   end
 end
@@ -1249,12 +1218,12 @@ local function printHelp()
   printMessage("/cm continue — Pick up the selected unfinished story")
   printMessage("/cm story <title> — Start a private story thread")
   printMessage("/cm status — Show client compatibility information")
-  printMessage("/cm share — Share current memory")
-  printMessage("/cm show — Show the panel")
-  printMessage("/cm hide — Hide the panel")
+  printMessage("/cm share — Post a brief encounter summary to group or say")
+  printMessage("/cm show — Open the journal")
+  printMessage("/cm hide — Close the journal")
   printMessage("/cm delete — Delete current target memory")
   printMessage("/cm toggle — Toggle show-on-target")
-  printMessage("/cm autoshares — Toggle first-meet auto-share")
+  printMessage("/cm autoshares — Toggle private meeting reminders in chat")
   printMessage("/cm rel — Show relationship info")
   printMessage("/cm reladd <xp> — Add XP to current target")
   printMessage("/cm journal — Toggle the journal window")
@@ -1277,7 +1246,7 @@ end
 SlashCmdList["CHARACTERMEMORY"] = function(msg)
   msg = msg or ""
   local cmd, rest = msg:match("^(%S+)%s*(.-)$")
-  cmd = cmd and cmd:lower() or "help"
+  cmd = cmd and cmd:lower() or "journal"
 
   if cmd == "help" or cmd == "" then
     printHelp()
@@ -1312,7 +1281,7 @@ SlashCmdList["CHARACTERMEMORY"] = function(msg)
 
   elseif cmd == "status" then
     local client = CMCompat.ClientInfo()
-    printMessage(string_format("RP Journal 0.4.0 · client %s (%s), interface %s", client.version, client.build, tostring(client.interface)))
+    printMessage(string_format("RP Journal %s · client %s (%s), interface %s", CMCompat.Version(), client.version, client.build, tostring(client.interface)))
 
   elseif cmd == "share" then
     CharacterMemory_Share()
@@ -1321,13 +1290,11 @@ SlashCmdList["CHARACTERMEMORY"] = function(msg)
     if _G.CharacterMemory_OpenJournal then _G.CharacterMemory_OpenJournal() else printMessage("Use /cm journal.") end
 
   elseif cmd == "hide" then
-    printMessage("Compact panel removed. Close the journal instead.")
+    if CMJ and CMJ.refs and CMJ.refs.root then CMJ.refs.root:Hide() end
 
   elseif cmd == "delete" then
     if not State.currentGUID then printMessage("No target.") return end
-    deleteEntry(State.currentGUID)
-    printMessage("Deleted memory for target.")
-    if State.frame then State.frame:Hide() end
+    CMUI.DeleteEntry(State.currentGUID)
 
   elseif cmd == "toggle" then
     CharacterMemoryDB.settings.showOnTarget = not CharacterMemoryDB.settings.showOnTarget
@@ -1335,7 +1302,7 @@ SlashCmdList["CHARACTERMEMORY"] = function(msg)
 
   elseif cmd == "autoshares" then
     CharacterMemoryDB.settings.shareEnabled = not CharacterMemoryDB.settings.shareEnabled
-    printMessage("Auto-share on first meet: " .. (CharacterMemoryDB.settings.shareEnabled and "ON" or "OFF"))
+    printMessage("Private meeting reminders: " .. (CharacterMemoryDB.settings.shareEnabled and "ON" or "OFF"))
 
   elseif cmd == "rel" then
     if not State.currentGUID then printMessage("No target.") return end
@@ -1359,7 +1326,7 @@ SlashCmdList["CHARACTERMEMORY"] = function(msg)
     end
 
   elseif cmd == "profile" or cmd == "sheet" or cmd == "prof" then
-    printMessage("Profile view has moved to the journal. Use /cm journal.")
+    if CMChronicleUI then CMChronicleUI.ShowProfile(storyPerson()) end
 
   elseif GetCVar and GetCVar("scriptProfile") == "1" and (cmd == "cpu" or cmd == "mem") then
     -- OPT: Dev-only profiling helpers (to be removed in release)
@@ -1415,7 +1382,7 @@ evt:SetScript("OnEvent", function(self, event, ...)
         State.frame:ClearAllPoints()
         State.frame:SetPoint(anch.point or "CENTER", UIParent, anch.point or "CENTER", anch.x or 0, anch.y or 200)
       end
-      printMessage("Loaded. Type /cm journal or /cmjournal")
+      -- Startup is intentionally silent; /cm status provides diagnostics on demand.
     end
 
   elseif event == "PLAYER_TARGET_CHANGED" then
@@ -1651,7 +1618,7 @@ StaticPopupDialogs["CONFIRM_DELETE_CHARACTER_MEMORY_ENTRY"] = {
         end
       end
       
-      printMessage("Character deleted from memory.")
+      if State.currentGUID == data.guid then State.currentGUID = nil end
     end
   end,
   timeout = 0,

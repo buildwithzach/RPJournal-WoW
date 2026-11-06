@@ -89,3 +89,8 @@ if not C.supported then
   CharacterMemory_RememberTarget = unsupported
   unsupported()
 end
+
+function C.Version()
+  local fn = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
+  return C.Read(fn, "CharacterMemory", "Version") or "unknown"
+end

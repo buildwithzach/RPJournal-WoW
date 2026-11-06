@@ -54,6 +54,7 @@ function CharacterMemory_GetAchievements(guid)
   e.ach.claimed = e.ach.claimed or {}
   e.ach.history = e.ach.history or { emotes = {} }
   e.ach.history.emotes = e.ach.history.emotes or {}
+  e.ach.completed = e.ach.completed or {}
   local out = {}
   local now = time()
   for _,def in ipairs(CM_AchievementDefs) do
@@ -70,8 +71,10 @@ function CharacterMemory_GetAchievements(guid)
       local cnt=0; for _,t in ipairs(arr) do if t>=cutoff then cnt=cnt+1 end end
       cur = cnt
     end
-    local done = cur >= def.goal
     local claimedAt = e.ach.claimed[def.id]
+    if not def.repeatable and (cur >= def.goal or claimedAt) then e.ach.completed[def.id] = true end
+    local done = cur >= def.goal or (not def.repeatable and e.ach.completed[def.id] == true)
+    if done and not def.repeatable then cur = math.max(cur, def.goal) end
     local claimable = false
     if done then
       if def.repeatable then
@@ -83,7 +86,7 @@ function CharacterMemory_GetAchievements(guid)
     end
     table.insert(out, {
       id=def.id, name=def.name, desc=def.desc, cur=cur, goal=def.goal,
-      done=done, claimable=claimable, claimedAt=claimedAt, rewardXP=def.rewardXP, valueIsSeconds=def.valueIsSeconds
+      done=done, claimable=claimable, claimedAt=claimedAt, rewardXP=def.rewardXP, valueIsSeconds=def.valueIsSeconds, repeatable=def.repeatable
     })
   end
   return out
@@ -100,11 +103,12 @@ function CharacterMemory_ClaimAchievement(guid, id)
   for _,a in ipairs(list) do if a.id == id then sel = a; break end end
   if not sel or not sel.claimable then return end
   local award = _G.CharacterMemory_AwardXP
-  if award then award(guid, sel.rewardXP or 0, "achievement:"..id) end
+  if type(award) ~= "function" then return end
   e.ach = e.ach or {}; e.ach.claimed = e.ach.claimed or {}
   e.ach.claimed[id] = time()
-  if _G.print then print("Character Memory: Achievement unlocked: " .. (sel.name or id) .. " +" .. tostring(sel.rewardXP or 0) .. " XP") end
+  award(guid, sel.rewardXP or 0, "achievement:"..id)
   if _G.CMJ and _G.CMJ.NotifyDataChanged then _G.CMJ.NotifyDataChanged() end
+  return true
 end
 
 -- Exported: achievement emote history tracker (per-target, pruned to last 7 days)
@@ -122,7 +126,12 @@ function CM_LogEmoteForAchievements(guid, emoteKey)
   local cutoff = now - 7*24*60*60
   local pruned = {}
   for _, t in ipairs(tbl[emoteKey]) do if t >= cutoff then table.insert(pruned, t) end end
+  -- A weekly goal needs at most ten recent timestamps; lifetime milestones are separate.
+  while #pruned > 10 do table.remove(pruned, 1) end
   tbl[emoteKey] = pruned
+  CharacterMemory_GetAchievements(guid)
+  if CharacterMemory_RefreshRelationship then CharacterMemory_RefreshRelationship(e) end
+  if CMJ and CMJ.NotifyDataChanged then CMJ.NotifyDataChanged() end
 end
 
 
