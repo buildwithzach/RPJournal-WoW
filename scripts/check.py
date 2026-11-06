@@ -7,7 +7,7 @@ import tempfile
 from zipfile import ZipFile
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
-for script in ['tests/run.py', 'tests/validate.py', 'scripts/package.py']:
+for script in ['tests/run.py', 'tests/validate.py', 'tests/package_layout.py', 'scripts/package.py']:
     subprocess.run([sys.executable, str(ROOT/script)], cwd=ROOT, check=True)
 first = {p.name: p.read_bytes() for p in (ROOT/'dist').glob('*.zip')}
 subprocess.run([sys.executable, str(ROOT/'scripts/package.py')], cwd=ROOT, check=True)

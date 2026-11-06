@@ -1,6 +1,6 @@
 # RP Journal for WoW Forever
 
-Version **0.4.2**, targeting **Forever 1.60.1 / Interface 16001**. Remember the people you meet, keep the small details, and give your characters a reason to cross paths again.
+Version **0.4.3**, targeting **Forever 1.60.1 / Interface 16001**. Remember the people you meet, keep the small details, and give your characters a reason to cross paths again.
 
 **PC gameplay testing is still pending.** This is an installable test build; offline checks cannot establish actual game rendering, protected API behavior, network delivery or SavedVariables disk writes.
 
@@ -108,3 +108,17 @@ python3 -m venv .venv
 ```
 
 The tests load actual TOC files, Lua 5.1 and FrameXML scripts against a synthetic API boundary. Presentation fixtures compare the protected journal/dialog declarations with immutable historical ZIPs, plus byte hashes for the main journal and admin files (excluding the exact client-guard prefix). Original art and compatible TGA pixels are checked separately. Source-layout renders approximate native skins and fonts; they are not game screenshots.
+
+## Uploading to CurseForge
+
+Run `python scripts/check.py` with the test dependencies installed. Upload the
+resulting **dist/RPJournal-Forever-0.4.3.zip**, not GitHub's source-code ZIP.
+The archive must contain only `CharacterMemory/` at its root. The manifest is
+`CharacterMemory/CharacterMemory.toc`; README, changelog and install instructions
+are also inside `CharacterMemory/`. No loose files, wrapper directory or macOS metadata.
+
+In CurseForge project **1324293 → Files → Add File**, select that ZIP, select only
+**WoW Forever → 1.60.1**, choose **Beta**, paste the release notes, and submit.
+The file is uploaded when its new file record exists. **Processing / Under Review
+is not approval**; verify **Approved** before calling the CurseForge release live.
+This release remains beta until the in-game checklist passes.

@@ -2,6 +2,7 @@
 """Build a reproducible installable ZIP and SHA-256 sidecar."""
 import hashlib
 import re
+from validate_package import validate_package
 from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +26,8 @@ paths += [ROOT/name for name in ['INSTALL-FOREVER.txt','README.md','CHANGELOG.md
 with ZipFile(out, 'w', ZIP_DEFLATED, compresslevel=9) as bundle:
     for path in paths:
         assert not path.is_symlink(), f'Symlinks cannot be packaged: {path}'
-        info = ZipInfo(path.relative_to(ROOT).as_posix(), date_time=(2026, 1, 1, 0, 0, 0))
+        name = path.relative_to(ROOT).as_posix() if path.is_relative_to(addon) else 'CharacterMemory/' + path.name
+        info = ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
         info.compress_type = ZIP_DEFLATED
         info.create_system = 3
         info.external_attr = 0o100644 << 16
@@ -38,6 +40,7 @@ with ZipFile(out) as bundle:
         if line.strip().endswith(('.lua','.xml')):
             assert 'CharacterMemory/'+line.strip() in bundle.namelist()
     assert not any(name.startswith(('tests/','experiments/','.git/')) for name in bundle.namelist())
+validate_package(out)
 digest = hashlib.sha256(out.read_bytes()).hexdigest()
 out.with_suffix('.zip.sha256').write_text(f'{digest}  {out.name}\n')
 print(out)
