@@ -5,6 +5,11 @@ All notable changes to the Character Memory WoW addon will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-11-06
+
+- Left-align achievement names and descriptions on the journal right page.
+- Keep progress right-aligned; gameplay and saved data are unchanged.
+
 ## [0.4.3] - 2026-11-06
 
 Packaging correction for CurseForge's rejection of loose files at the ZIP root.

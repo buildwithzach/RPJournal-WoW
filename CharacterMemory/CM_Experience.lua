@@ -42,8 +42,8 @@ local function build()
   for i, row in ipairs(R.achRows) do
     row:ClearAllPoints(); row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -64 - (i - 1) * 44)
     row:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
-    if row.title then row.title:SetWidth(244); row.title:SetMaxLines(1) end
-    if row.desc then row.desc:SetWidth(244); row.desc:SetMaxLines(1) end
+    if row.title then row.title:SetWidth(244); row.title:SetMaxLines(1); row.title:SetJustifyH("LEFT") end
+    if row.desc then row.desc:SetWidth(244); row.desc:SetMaxLines(1); row.desc:SetJustifyH("LEFT") end
     if row.progress then row.progress:SetWidth(90); row.progress:SetJustifyH("RIGHT") end
   end
   return true

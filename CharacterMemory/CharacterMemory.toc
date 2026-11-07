@@ -2,7 +2,7 @@
 ## Title: RPJournal
 ## Notes: WoW Forever roleplay journal. People, living memories, unfinished stories and public character sheets.
 ## Author: detox1hp
-## Version: 0.4.3
+## Version: 0.4.4
 ## SavedVariablesPerCharacter: CharacterMemoryDB, RPJournalDB
 ## IconTexture: Interface\AddOns\CharacterMemory\media\CMcompact.tga
 ## AddonCompartmentFunc: CharacterMemory_OpenJournal
